@@ -98,13 +98,14 @@ function main() {
   log(`创建压缩包：release/${path.basename(archivePath)}`)
   createArchive()
 
-  // 使用说明同步放一份在 release/，分发/预览时无需先解压 tar.gz
-  const releaseDocPath = path.join(releaseDir, '使用说明-Linux.txt')
-  fs.copyFileSync(usageDocPath, releaseDocPath)
+  // release 下只保留 tar.gz 和解压目录，清理 electron-builder 中间文件和旧版说明
+  for (const name of ['builder-debug.yml', 'builder-effective-config.yaml', '使用说明-Linux.txt']) {
+    removeIfExists(path.join(releaseDir, name))
+  }
 
   const size = fs.statSync(archivePath).size
   log(`完成（${(size / 1024 / 1024).toFixed(1)} MiB）`)
-  log(`使用说明：release/${path.basename(releaseDocPath)}（与包内 使用说明.txt 相同）`)
+  log(`解压目录：release/${stagingName}/（与压缩包内容相同）`)
 }
 
 main()

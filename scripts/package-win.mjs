@@ -143,6 +143,7 @@ function removeStaleArtifacts() {
   const staleFilePatterns = [
     /^builder-debug\.yml$/i,
     /^builder-effective-config\.yaml$/i,
+    /^使用说明-Windows\.txt$/i,
     new RegExp(`^${escapedProduct}-.+\\.(exe|zip|7z)$`, 'i')
   ]
   for (const entry of fs.readdirSync(releaseDir, { withFileTypes: true })) {
@@ -279,10 +280,9 @@ function main() {
   // 4. 根目录启动器
   buildLauncher(path.join(stagingDir, launcherName))
 
-  // 5. 打 zip 并清理中间目录
+  // 5. 打 zip；保留 staging 目录，release 下同时提供 zip 和解压目录
   log('压缩发布包…')
   createZip()
-  fs.rmSync(stagingDir, { recursive: true, force: true })
   fs.rmSync(unpackedDir, { recursive: true, force: true })
   for (const name of ['builder-debug.yml', 'builder-effective-config.yaml']) {
     fs.rmSync(path.join(releaseDir, name), { force: true })
@@ -291,12 +291,6 @@ function main() {
   if (!fs.existsSync(zipPath)) fail('未生成发布 zip')
   const zipSize = fs.statSync(zipPath).size
 
-  // 使用说明同步放一份在 release/，分发/预览时无需先解压 zip
-  const releaseDocPath = path.join(releaseDir, '使用说明-Windows.txt')
-  if (fs.existsSync(usageDocPath)) {
-    fs.copyFileSync(usageDocPath, releaseDocPath)
-  }
-
   log('')
   log(`发布包：release/${path.basename(zipPath)}（${humanBytes(zipSize)}）`)
   log('  解压后结构：')
@@ -304,9 +298,6 @@ function main() {
   log(`  ├─ ${launcherName}    # 启动器，双击运行`)
   log('  ├─ 使用说明.txt       # 使用说明')
   log('  └─ app/               # Electron 运行时（请勿拆分/移动）')
-  if (fs.existsSync(releaseDocPath)) {
-    log(`使用说明：release/${path.basename(releaseDocPath)}（与包内 使用说明.txt 相同）`)
-  }
   const releaseLeft = fs
     .readdirSync(releaseDir, { withFileTypes: true })
     .map((entry) => entry.name)

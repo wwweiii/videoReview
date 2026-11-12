@@ -111,8 +111,8 @@ npm install        # 或 npm ci（已有 package-lock.json）
 npm run dev        # 开发模式（electron-vite dev，主进程 + 渲染层热更新）
 npm run build      # 仅构建到 out/（不打包安装包）
 npm run preview    # 预览已构建产物（electron-vite preview）
-npm run build:win  # 构建 + 打包 Windows x64 发布包（release/videoReview-win-x86.zip）
-npm run build:linux # 构建 + 打包麒麟 Linux x64 便携包（release/videoReview-linux-x64.tar.gz）
+npm run build:win  # 构建 + 打包 Windows x64 发布包（release/videoReview-win-x86.zip + 同名目录）
+npm run build:linux # 构建 + 打包麒麟 Linux x64 便携包（release/videoReview-linux-x64.tar.gz + 同名目录）
 ```
 
 构建 Windows 时，`scripts/package-win.mjs` 会把 electron-builder 的 `win-unpacked/` 整理成「启动器 + 运行组件子目录」的绿色包。构建 Linux 时，`scripts/package-linux.mjs` 会把 `linux-unpacked/` 整理为同样的数据目录布局并生成 tar.gz。两个脚本都会清理对应的旧中间产物。
@@ -124,7 +124,7 @@ npm run build:linux # 构建 + 打包麒麟 Linux x64 便携包（release/videoR
 ```text
 videoReview-win-x86/
 ├─ 视频智能审核.exe      # 启动器，双击运行（几十 KB）
-├─ 使用说明.txt          # Windows 版使用说明（与 release/使用说明-Windows.txt 相同）
+├─ 使用说明.txt          # Windows 版使用说明
 └─ app/                  # Electron 运行时（真实 exe 为 app/videoReview.exe，请勿拆分/移动）
 ```
 
@@ -135,7 +135,7 @@ Linux x64（银河麒麟 V10 SP1）包解压后结构如下：
 ```text
 videoReview-linux-x64/
 ├─ 视频智能审核         # 启动脚本，需从此文件启动
-├─ 使用说明.txt         # Linux 版使用说明（与 release/使用说明-Linux.txt 相同）
+├─ 使用说明.txt         # Linux 版使用说明
 ├─ data/                # 首次启动自动写入设置、任务和日志
 └─ app/                 # Electron 运行时与内置 ffmpeg，请勿拆分/移动
 ```
