@@ -17,7 +17,6 @@ const analysisMode = process.env.PRESET_MODE
 const groupSize = process.env.PRESET_GROUP_SIZE
 const confidenceThreshold = process.env.PRESET_THRESHOLD
 const localize = process.env.PRESET_LOCALIZE
-const maxBoxesPerFrame = process.env.PRESET_MAX_BOXES
 const extraBody = process.env.PRESET_EXTRA_BODY || ''
 const maxTokens = process.env.PRESET_MAX_TOKENS
 const imageMaxEdge = process.env.PRESET_IMAGE_MAX_EDGE
@@ -39,7 +38,7 @@ if (!baseUrl || !model) {
       '  PRESET_GROUP_SIZE, PRESET_THRESHOLD',
       '',
       '定位标记相关:',
-      '  PRESET_LOCALIZE (true/false), PRESET_MAX_BOXES (1-20)',
+      '  PRESET_LOCALIZE (true/false)',
       '  PRESET_EXTRA_BODY (JSON 字符串，透传到请求体)',
       '  PRESET_MAX_TOKENS, PRESET_IMAGE_MAX_EDGE (0=原图), PRESET_IMAGE_FORMAT (png/jpeg)',
       '  PRESET_PROMPT_LANGUAGE (zh/en)',
@@ -102,7 +101,6 @@ if (analysisMode === 'single' || analysisMode === 'group') defaults.analysisMode
 if (Number.isFinite(Number(groupSize))) defaults.groupSize = Number(groupSize)
 if (Number.isFinite(Number(confidenceThreshold))) defaults.confidenceThreshold = Number(confidenceThreshold)
 if (localize === 'true' || localize === 'false') defaults.localize = localize === 'true'
-if (Number.isFinite(Number(maxBoxesPerFrame))) defaults.maxBoxesPerFrame = Number(maxBoxesPerFrame)
 
 const payload = JSON.stringify({
   baseUrl: String(baseUrl).trim(),

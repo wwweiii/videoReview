@@ -106,8 +106,7 @@ function writeSettings(port: number): void {
     analysisMode: 'single',
     groupSize: 4,
     confidenceThreshold: 0.6,
-    localize: true,
-    maxBoxesPerFrame: 8
+    localize: true
   }
   fs.writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify(settings, null, 2), 'utf8')
 }

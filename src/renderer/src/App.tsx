@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { isTaskTerminal } from '@shared/task'
 import type { PublicSettings, TaskEvent, TaskKind, TaskRecord, TaskSummary } from '@shared/types'
 import { Sidebar, type MainView } from './components/layout/Sidebar'
+import type { SettingsSection } from './components/settings/SettingsNav'
 import { Toast, type ToastMessage } from './components/common/Toast'
 import { TaskDetailPage } from './pages/TaskDetailPage'
 import { TaskHistoryPage } from './pages/TaskHistoryPage'
@@ -14,7 +15,8 @@ type View =
   | { name: 'home' }
   | { name: 'tasks' }
   | { name: 'behavior-tasks' }
-  | { name: 'settings' }
+  /** 设置页由二级菜单子页决定内容，切换子页只改 section、不整页刷新。 */
+  | { name: 'settings'; section: SettingsSection }
   | { name: 'task'; taskId: string; taskKind: TaskKind }
 
 function upsertTask(list: TaskSummary[], summary: TaskSummary): TaskSummary[] {
@@ -167,9 +169,15 @@ export default function App(): React.JSX.Element {
           ? { name: 'tasks' }
           : target === 'behavior-tasks'
             ? { name: 'behavior-tasks' }
-            : { name: 'settings' }
+            // 侧边栏「设置」总是回到默认子页（物品识别）
+            : { name: 'settings', section: 'items' }
     )
     if (target === 'tasks' || target === 'behavior-tasks') void refreshTasks()
+  }
+
+  /** 设置页二级菜单切换：只替换子页标识，不卸载设置页，未保存表单内容保留。 */
+  function changeSettingsSection(section: SettingsSection): void {
+    setView({ name: 'settings', section })
   }
 
   async function refreshCurrentTask(): Promise<void> {
@@ -229,7 +237,13 @@ export default function App(): React.JSX.Element {
         ) : null}
 
         {view.name === 'settings' ? (
-          <SettingsPage settings={settings} onSaved={setSettings} showToast={showToast} />
+          <SettingsPage
+            settings={settings}
+            section={view.section}
+            onSectionChange={changeSettingsSection}
+            onSaved={setSettings}
+            showToast={showToast}
+          />
         ) : null}
 
         {view.name === 'task' ? (

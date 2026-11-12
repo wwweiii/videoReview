@@ -667,7 +667,6 @@ function buildLocateRequestBody(space) {
     space,
     sentWidth: 1120,
     sentHeight: 672,
-    maxBoxes: 8,
     scene: '会议室监控',
     itemLabels: ['手机', '相机'],
     timestampText: '00:00:03'

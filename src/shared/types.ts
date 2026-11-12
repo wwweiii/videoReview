@@ -101,8 +101,6 @@ export interface AnalysisConfig {
   confidenceThreshold: number
   /** 是否启用违禁物定位标记 */
   localize: boolean
-  /** 每帧最多保留几个框 */
-  maxBoxesPerFrame: number
   /** 当前行为设置快照来源；物品任务忽略此字段。 */
   behaviorItems: BehaviorItem[]
 }
@@ -205,8 +203,13 @@ export interface PublicSettings {
   analysisMode: AnalysisMode
   groupSize: number
   localize: boolean
-  maxBoxesPerFrame: number
   behaviorItems: BehaviorItem[]
+  /** 行为识别窗口时长（秒） */
+  behaviorWindowSec: number
+  /** 行为识别推进步长（秒） */
+  behaviorStrideSec: number
+  /** 行为识别每秒采样帧数 */
+  behaviorFps: number
 }
 
 export interface CustomModelInput {
@@ -233,8 +236,10 @@ export interface SaveSettingsInput {
   analysisMode: AnalysisMode
   groupSize: number
   localize: boolean
-  maxBoxesPerFrame: number
   behaviorItems: BehaviorItem[]
+  behaviorWindowSec: number
+  behaviorStrideSec: number
+  behaviorFps: number
 }
 
 export interface TestModelInput {

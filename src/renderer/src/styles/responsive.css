@@ -35,6 +35,23 @@
   }
 }
 
+/* 设置页：窄屏下标题与横向二级菜单允许换行 */
+@media (max-width: 1000px) {
+  .settings-header {
+    flex-wrap: wrap;
+  }
+
+  .settings-heading {
+    flex-wrap: wrap;
+    gap: 12px 20px;
+  }
+
+  .settings-nav-item {
+    height: 38px;
+    padding: 0 12px;
+  }
+}
+
 @media (max-width: 850px) {
   .form-grid {
     grid-template-columns: minmax(0, 1fr);

@@ -16,7 +16,6 @@ export interface LocalizePromptInput {
   space: CoordinateSpace
   sentWidth: number
   sentHeight: number
-  maxBoxes: number
   scene: string
   itemLabels: string[]
   timestampText: string
@@ -95,7 +94,6 @@ export function buildLocalizeMessages(input: LocalizePromptInput): BuiltMessages
     space,
     sentWidth,
     sentHeight,
-    maxBoxes,
     scene,
     itemLabels,
     timestampText,
@@ -115,7 +113,7 @@ export function buildLocalizeMessages(input: LocalizePromptInput): BuiltMessages
       '1. Only annotate clearly visible, verifiable physical objects; annotate each object once.',
       '2. Text, screen content, posters, reflections and mirror images are not physical objects; do not annotate them.',
       '3. Boxes should hug the visible outline of the object, not a large background area; if occluded, box the visible part only.',
-      `4. Output at most ${maxBoxes} boxes, ordered by confidence from high to low.`,
+      '4. Output every clearly visible, verifiable target, ordered by confidence from high to low.',
       '5. If no target object is present, return {"objects": []}. Never guess a location.',
       focus.length > 0
         ? `6. The frame has already been judged abnormal for: ${items}. Only locate these objects. Do not output boxes for other objects, and do not substitute a different object when the target is missing.`
@@ -144,7 +142,7 @@ export function buildLocalizeMessages(input: LocalizePromptInput): BuiltMessages
     '1. 只标注图片中清晰可见、可确认的实体物品；同一物品只标注一次。',
     '2. 文字、屏幕里的画面、海报图案、镜面反射、倒影都不是实体物品，不要标注。',
     '3. 框要贴近物品外边缘，不要框住大片背景；物品被明显遮挡时只框可见部分。',
-    `4. 最多输出 ${maxBoxes} 个框，按置信度从高到低排列。`,
+    '4. 输出所有清晰可见、可确认的目标框，按置信度从高到低排列。',
     '5. 如果图片中没有目标物品，返回 {"objects": []}；找不到时禁止猜测位置。',
     focus.length > 0
       ? `6. 本帧异常判定已确认存在：${items}。请只定位这些对象，不要标注其他物品；如果目标不可见，返回 {"objects": []}，不要用其他物品代替。`
@@ -192,4 +190,4 @@ export function buildProbeMessages(language: PromptLanguage = 'zh'): BuiltMessag
 }
 
 /** 提示词版本指纹：改模板就必须重新探测 */
-export const LOCALIZE_PROMPT_VERSION = 'localize-v2'
+export const LOCALIZE_PROMPT_VERSION = 'localize-v3'

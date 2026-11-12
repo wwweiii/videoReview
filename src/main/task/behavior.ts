@@ -37,7 +37,7 @@ export async function runBehaviorTask(
         signal: controller.signal,
         onProgress: ({ percent }) => {
           task.progress = percent
-          task.phaseMessage = '正在提取行为画面（4 FPS）'
+          task.phaseMessage = `正在提取行为画面（${sampling.fps} FPS）`
           emitSummary(task)
         }
       })
@@ -61,7 +61,8 @@ export async function runBehaviorTask(
           window,
           getFramesDir(task.id),
           controller.signal,
-          sampling.behaviors
+          sampling.behaviors,
+          sampling.fps
         )
         const verdict = deriveVerdict(result, task.config.confidenceThreshold)
         Object.assign(window, {

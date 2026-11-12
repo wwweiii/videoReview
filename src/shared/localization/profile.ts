@@ -73,8 +73,6 @@ export interface ModelProfile {
   /** 服务端若还有额外 resize，用这两个系数补偿（探针拟合） */
   scaleX: number
   scaleY: number
-  /** 探针推断的每帧框数上限 */
-  maxBoxes: number
   multiTarget: boolean
   thinkingPolluted: boolean
   tokenLeak: boolean
@@ -110,7 +108,6 @@ export function unknownProfile(
     parseDialects: [...DEFAULT_PARSE_ORDER],
     scaleX: 1,
     scaleY: 1,
-    maxBoxes: 8,
     multiTarget: true,
     thinkingPolluted: false,
     tokenLeak: false,

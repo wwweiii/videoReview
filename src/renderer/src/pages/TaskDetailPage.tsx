@@ -8,6 +8,11 @@ import {
   StopCircle
 } from 'lucide-react'
 import { useEffect, useState, type JSX } from 'react'
+import {
+  DEFAULT_BEHAVIOR_FPS,
+  DEFAULT_BEHAVIOR_STRIDE_SEC,
+  DEFAULT_BEHAVIOR_WINDOW_SEC
+} from '@shared/defaults'
 import { formatDuration } from '@shared/format'
 import { countFrameStats, isTaskActive } from '@shared/task'
 import { taskResults } from '@shared/behavior'
@@ -157,7 +162,7 @@ export function TaskDetailPage({
                 {task.source.width}×{task.source.height}
               </span>
             ) : null}
-            <span>{behavior ? `行为识别 · ${task.behaviorConfig?.windowSec ?? 2} 秒窗口 · ${task.behaviorConfig?.strideSec ?? 2} 秒推进 · ${task.behaviorConfig?.fps ?? 4} FPS` : `每 ${task.config.intervalSec} 秒`}</span>
+            <span>{behavior ? `行为识别 · ${task.behaviorConfig?.windowSec ?? DEFAULT_BEHAVIOR_WINDOW_SEC} 秒窗口 · ${task.behaviorConfig?.strideSec ?? DEFAULT_BEHAVIOR_STRIDE_SEC} 秒推进 · ${task.behaviorConfig?.fps ?? DEFAULT_BEHAVIOR_FPS} FPS` : `每 ${task.config.intervalSec} 秒`}</span>
           </div>
         </div>
         <div className="detail-actions">

@@ -91,7 +91,6 @@ export interface LocalizeFrameInput {
   customItems?: CustomProhibitedItem[]
   /** 本帧异常判定已确认的类别，用于约束"只定位判定的对象" */
   focusCategories?: string[]
-  maxBoxes: number
 }
 
 export interface LocalizeFrameResult {
@@ -169,7 +168,6 @@ export async function localizeFrame(
     space: profile.coordinateSpace,
     sentWidth: prepared.sentWidth,
     sentHeight: prepared.sentHeight,
-    maxBoxes: Math.max(1, Math.min(input.maxBoxes, profile.maxBoxes || input.maxBoxes)),
     scene: '视频',
     itemLabels: configuredItemLabels(input.itemIds, customItems),
     focusLabels,
@@ -229,11 +227,11 @@ export async function localizeFrame(
   const filtered = withMatches.filter((item) => item.matchesFocus)
   const filteredOut = withMatches.length - filtered.length
 
-  // 同类别高 IoU 去重（保留置信度高者）
+  // 同类别高 IoU 去重（保留置信度高者），默认不限制每帧框数
   const sorted = [...filtered].sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))
   const kept = dedupeBoxes(
     sorted.map((item) => ({ ...item, label: item.category })),
-    Math.max(1, input.maxBoxes),
+    Number.POSITIVE_INFINITY,
     0.6
   )
 

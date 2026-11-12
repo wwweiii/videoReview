@@ -1,9 +1,9 @@
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import type { TaskKind, TaskRecord, TaskSummary } from '@shared/types'
-import { BEHAVIOR_CONFIG, taskResults } from '@shared/behavior'
+import { taskResults } from '@shared/behavior'
 import { getResolvedModelConfig } from '../config/model-config'
-import { getAnalysisConfig } from '../config/settings'
+import { getAnalysisConfig, getBehaviorConfig } from '../config/settings'
 import { logger } from '../logger'
 import { probeVideo } from '../media/ffmpeg'
 import { getTaskDir } from '../paths'
@@ -107,10 +107,7 @@ async function startTask(filePath: string, kind: TaskKind): Promise<TaskSummary>
     regionProfile: null,
     ...(kind === 'behavior'
       ? {
-          behaviorConfig: {
-            ...BEHAVIOR_CONFIG,
-            behaviors: config.behaviorItems.map((item) => item.label)
-          },
+          behaviorConfig: getBehaviorConfig(),
           behaviorWindows: []
         }
       : {})

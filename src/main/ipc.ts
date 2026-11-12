@@ -8,7 +8,7 @@ import type {
   TestModelInput
 } from '@shared/types'
 import { getResolvedModelConfigForTesting } from './config/model-config'
-import { getAnalysisConfig, getPublicSettings, saveSettings } from './config/settings'
+import { getPublicSettings, saveSettings } from './config/settings'
 import { probeModelConfig } from './localization/probe'
 import { testModelConnection } from './model/client'
 import {
@@ -83,8 +83,7 @@ export function registerIpcHandlers(): void {
     async (_event, input: TestModelInput): Promise<ModelProbeResult> => {
       try {
         const config = getResolvedModelConfigForTesting(input)
-        const maxBoxes = getAnalysisConfig().maxBoxesPerFrame
-        const outcome = await probeModelConfig(config, maxBoxes)
+        const outcome = await probeModelConfig(config)
         const { profile, evaluation } = outcome
         const message = outcome.reusedExisting
           ? `本次探测未通过（${evaluation.notes.join('；') || '输出不稳定'}），已沿用上次成功结论`

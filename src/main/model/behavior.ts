@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { behaviorTime } from '@shared/behavior'
+import { BEHAVIOR_CONFIG, behaviorTime } from '@shared/behavior'
 import type { ChatContentPart, ChatMessage } from '@shared/localization/request'
 import type { BehaviorWindowRecord } from '@shared/types'
 import type { ResolvedModelConfig } from '../config/model-config'
@@ -58,15 +58,30 @@ export function parseBehaviorAnalysis(raw: string, behaviorLabels: string[]): Pa
   }
 }
 
+/** 采样间隔展示：默认 4 FPS 显示 0.25，非整除帧率保留两位小数。 */
+function formatSampleInterval(seconds: number): string {
+  const rounded = Math.round(seconds * 100) / 100
+  return String(rounded)
+}
+
+/** 按实际采样时间差描述片段采样密度（旧任务缺少 fps 时回退默认值）。 */
+function describeSampling(window: BehaviorWindowRecord, fps: number): string {
+  const deltaMs =
+    window.samples.length > 1 ? window.samples[1].timestampMs - window.samples[0].timestampMs : 0
+  const intervalSec = deltaMs > 0 ? deltaMs / 1000 : 1 / fps
+  return `完整窗口按 ${fps} FPS 采样，相邻画面相隔 ${formatSampleInterval(intervalSec)} 秒`
+}
+
 export function buildBehaviorMessages(
   window: BehaviorWindowRecord,
   framesDir: string,
-  behaviorLabels: string[]
+  behaviorLabels: string[],
+  fps: number = BEHAVIOR_CONFIG.fps
 ): ChatMessage[] {
   const content: ChatContentPart[] = [{
     type: 'text',
     text: `审核视频 ${behaviorTime(window.timestampMs)} 至 ${behaviorTime(window.endTimestampMs)} 的一个连续片段。` +
-      `以下 ${window.samples.length} 张画面按时间排序，完整窗口按 4 FPS 采样，相邻画面相隔 0.25 秒。` +
+      `以下 ${window.samples.length} 张画面按时间排序，${describeSampling(window, fps)}。` +
       '请结合全部画面做一次片段级行为判断，不要逐帧返回结果。'
   }]
   for (const [index, sample] of window.samples.entries()) {
@@ -97,7 +112,8 @@ export async function analyzeBehaviorWindow(
   window: BehaviorWindowRecord,
   framesDir: string,
   signal: AbortSignal,
-  behaviorLabels: string[]
+  behaviorLabels: string[],
+  fps: number = BEHAVIOR_CONFIG.fps
 ): Promise<ParsedAnalysis> {
   if (window.samples.length === 0) throw new Error('该片段未提取到画面')
   if (behaviorLabels.length === 0) throw new Error('未配置识别行为')
@@ -120,7 +136,7 @@ export async function analyzeBehaviorWindow(
   }
   const { content } = await requestChat(
     { ...config, extraBody: JSON.stringify(extra) },
-    buildBehaviorMessages(window, framesDir, behaviorLabels),
+    buildBehaviorMessages(window, framesDir, behaviorLabels, fps),
     { signal, maxTokens: Math.min(config.maxTokens, 1200), maxAttempts: 1, requireComplete: true }
   )
   const analysis = parseBehaviorAnalysis(content, behaviorLabels)

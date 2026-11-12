@@ -2,24 +2,27 @@ import { safeStorage } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import {
+  DEFAULT_BEHAVIOR_FPS,
+  DEFAULT_BEHAVIOR_STRIDE_SEC,
+  DEFAULT_BEHAVIOR_WINDOW_SEC,
   DEFAULT_CONCURRENCY,
   DEFAULT_CONFIDENCE_THRESHOLD,
   DEFAULT_GROUP_SIZE,
   DEFAULT_IMAGE_MAX_EDGE,
   DEFAULT_INTERVAL_SEC,
   DEFAULT_LOCALIZE,
-  DEFAULT_MAX_BOXES_PER_FRAME,
   DEFAULT_MAX_TOKENS,
   DEFAULT_TIMEOUT_SEC
 } from '@shared/defaults'
 import { clampNumber, normalizeInterval } from '@shared/format'
 import { DEFAULT_PROHIBITED_ITEMS, normalizeCustomItems } from '@shared/items'
-import { normalizeBehaviorItems } from '@shared/behavior'
+import { normalizeBehaviorItems, normalizeBehaviorSampling } from '@shared/behavior'
 import type { BoxOrder, CoordinateSpace, ParseDialect } from '@shared/localization/profile'
 import type { PromptLanguage } from '@shared/localization/prompts'
 import type {
   AnalysisConfig,
   AnalysisMode,
+  BehaviorAnalysisConfig,
   BehaviorItem,
   CustomModelInput,
   CustomProhibitedItem,
@@ -59,8 +62,13 @@ export interface StoredSettings {
   groupSize: number
   confidenceThreshold: number
   localize: boolean
-  maxBoxesPerFrame: number
   behaviorItems: BehaviorItem[]
+  /** 行为识别窗口时长（秒） */
+  behaviorWindowSec: number
+  /** 行为识别推进步长（秒） */
+  behaviorStrideSec: number
+  /** 行为识别每秒采样帧数 */
+  behaviorFps: number
 }
 
 export const DEFAULT_MODEL_RUNTIME: Pick<
@@ -111,10 +119,10 @@ function defaultStoredSettings(): StoredSettings {
       1
     ),
     localize: presetDefaults.localize ?? DEFAULT_LOCALIZE,
-    maxBoxesPerFrame: Math.round(
-      clampNumber(presetDefaults.maxBoxesPerFrame ?? DEFAULT_MAX_BOXES_PER_FRAME, 1, 20)
-    ),
-    behaviorItems: []
+    behaviorItems: [],
+    behaviorWindowSec: DEFAULT_BEHAVIOR_WINDOW_SEC,
+    behaviorStrideSec: DEFAULT_BEHAVIOR_STRIDE_SEC,
+    behaviorFps: DEFAULT_BEHAVIOR_FPS
   }
 }
 
@@ -173,6 +181,11 @@ function normalizeStored(raw: Partial<StoredSettings>): StoredSettings {
   const defaults = defaultStoredSettings()
   const custom = raw.customModel ?? defaults.customModel
   const customItems = normalizeCustomItems(raw.customProhibitedItems)
+  const behaviorSampling = normalizeBehaviorSampling({
+    windowSec: raw.behaviorWindowSec,
+    strideSec: raw.behaviorStrideSec,
+    fps: raw.behaviorFps
+  })
   return {
     modelMode:
       raw.modelMode === 'preset' || raw.modelMode === 'custom' ? raw.modelMode : defaults.modelMode,
@@ -200,14 +213,10 @@ function normalizeStored(raw: Partial<StoredSettings>): StoredSettings {
       1
     ),
     localize: typeof raw.localize === 'boolean' ? raw.localize : defaults.localize,
-    maxBoxesPerFrame: Math.round(
-      clampNumber(
-        raw.maxBoxesPerFrame === undefined ? DEFAULT_MAX_BOXES_PER_FRAME : Number(raw.maxBoxesPerFrame),
-        1,
-        20
-      )
-    ),
-    behaviorItems: normalizeBehaviorItems(raw.behaviorItems)
+    behaviorItems: normalizeBehaviorItems(raw.behaviorItems),
+    behaviorWindowSec: behaviorSampling.windowSec,
+    behaviorStrideSec: behaviorSampling.strideSec,
+    behaviorFps: behaviorSampling.fps
   }
 }
 
@@ -326,8 +335,21 @@ export function getPublicSettings(): PublicSettings {
     analysisMode: stored.analysisMode,
     groupSize: stored.groupSize,
     localize: stored.localize,
-    maxBoxesPerFrame: stored.maxBoxesPerFrame,
-    behaviorItems: stored.behaviorItems.map((item) => ({ ...item }))
+    behaviorItems: stored.behaviorItems.map((item) => ({ ...item })),
+    behaviorWindowSec: stored.behaviorWindowSec,
+    behaviorStrideSec: stored.behaviorStrideSec,
+    behaviorFps: stored.behaviorFps
+  }
+}
+
+/** 行为任务创建时使用的采样参数与行为名称快照。 */
+export function getBehaviorConfig(): BehaviorAnalysisConfig {
+  const stored = loadSettings()
+  return {
+    windowSec: stored.behaviorWindowSec,
+    strideSec: stored.behaviorStrideSec,
+    fps: stored.behaviorFps,
+    behaviors: stored.behaviorItems.map((item) => item.label)
   }
 }
 
@@ -341,7 +363,6 @@ export function getAnalysisConfig(): AnalysisConfig {
     groupSize: stored.groupSize,
     confidenceThreshold: stored.confidenceThreshold,
     localize: stored.localize,
-    maxBoxesPerFrame: stored.maxBoxesPerFrame,
     behaviorItems: stored.behaviorItems.map((item) => ({ ...item }))
   }
 }
@@ -400,6 +421,11 @@ export function saveSettings(input: SaveSettingsInput): PublicSettings {
     Object.assign(nextCustom, protectApiKey(input.customModel.apiKey.trim()))
   }
 
+  const behaviorSampling = normalizeBehaviorSampling({
+    windowSec: input.behaviorWindowSec,
+    strideSec: input.behaviorStrideSec,
+    fps: input.behaviorFps
+  })
   cachedSettings = {
     ...current,
     modelMode: input.modelMode,
@@ -410,8 +436,10 @@ export function saveSettings(input: SaveSettingsInput): PublicSettings {
     analysisMode: input.analysisMode === 'group' ? 'group' : 'single',
     groupSize: Math.round(clampNumber(input.groupSize, 2, 8)),
     localize: Boolean(input.localize),
-    maxBoxesPerFrame: Math.round(clampNumber(input.maxBoxesPerFrame, 1, 20)),
-    behaviorItems: normalizeBehaviorItems(input.behaviorItems)
+    behaviorItems: normalizeBehaviorItems(input.behaviorItems),
+    behaviorWindowSec: behaviorSampling.windowSec,
+    behaviorStrideSec: behaviorSampling.strideSec,
+    behaviorFps: behaviorSampling.fps
   }
   persistSettings(cachedSettings)
   return getPublicSettings()

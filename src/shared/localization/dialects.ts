@@ -563,10 +563,10 @@ export function mapRawBoxesAdaptive(
   return { mapped: primary, usedOrigin: false }
 }
 
-/** 同类别高 IoU 去重 + 数量上限（保留靠前的） */
+/** 同类别高 IoU 去重（默认不限制返回框数，limit 仅供调用方按需收敛） */
 export function dedupeBoxes<T extends { label: string; box: RegionBox }>(
   boxes: T[],
-  limit: number,
+  limit: number = Number.POSITIVE_INFINITY,
   threshold = 0.6
 ): T[] {
   const kept: T[] = []

@@ -84,10 +84,9 @@ async function probeOnce(
 /** 运行能力探针并把结论写入模型档案 */
 export async function probeModelConfig(
   config: ResolvedModelConfig,
-  maxBoxes: number,
   signal?: AbortSignal
 ): Promise<ProbeOutcome> {
-  const promptFingerprint = computePromptFingerprint(config, maxBoxes)
+  const promptFingerprint = computePromptFingerprint(config)
 
   // 外部 API 的输出有随机性：第一次不通过时再测一次，取更优结果，避免一次抖动把能力档杀掉
   let attempt = await probeOnce(config, signal)
@@ -106,7 +105,7 @@ export async function probeModelConfig(
   }
 
   const evaluation = attempt.evaluation
-  const existing = getProfile(config, maxBoxes)
+  const existing = getProfile(config)
 
   // 之前能定位、这次没通过 → 不降级，沿用旧档案（避免用户点一次探测就把功能弄坏）
   if (!evaluation.ok && existing?.localizationOk && existing.coordinateSpace !== 'unknown') {
@@ -140,7 +139,6 @@ export async function probeModelConfig(
         : [evaluation.dialect, ...DEFAULT_PARSE_ORDER.filter((item) => item !== evaluation.dialect)],
     scaleX: evaluation.scaleX,
     scaleY: evaluation.scaleY,
-    maxBoxes: evaluation.multiTarget ? maxBoxes : 1,
     multiTarget: evaluation.multiTarget,
     thinkingPolluted: evaluation.thinkingPolluted,
     tokenLeak: evaluation.tokenLeak,
@@ -167,13 +165,12 @@ export async function probeModelConfig(
 /** 取当前配置可用的档案：已有就用，没有就跑探针，最后应用手动覆盖 */
 export async function ensureProfile(
   config: ResolvedModelConfig,
-  maxBoxes: number,
   signal?: AbortSignal
 ): Promise<ModelProfile> {
-  let profile = getProfile(config, maxBoxes)
+  let profile = getProfile(config)
   if (!profile || (!profile.localizationOk && profile.coordinateSpace === 'unknown')) {
     try {
-      const outcome = await probeModelConfig(config, maxBoxes, signal)
+      const outcome = await probeModelConfig(config, signal)
       profile = outcome.profile
     } catch (error) {
       if (signal?.aborted) throw error
@@ -181,7 +178,7 @@ export async function ensureProfile(
       profile = null
     }
   }
-  const effective = applyProfileOverrides(profile, config, maxBoxes)
+  const effective = applyProfileOverrides(profile, config)
   if (!effective || !effective.localizationOk || effective.coordinateSpace === 'unknown') {
     const reason = effective?.notes?.slice(-2).join('；') || '未探测到可用的定位能力'
     throw new LocalizationUnavailableError(reason)

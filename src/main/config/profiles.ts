@@ -59,11 +59,10 @@ function persistProfiles(): void {
   }
 }
 
-export function computePromptFingerprint(config: ResolvedModelConfig, maxBoxes: number): string {
+export function computePromptFingerprint(config: ResolvedModelConfig): string {
   const payload = [
     LOCALIZE_PROMPT_VERSION,
     config.promptLanguage,
-    String(maxBoxes),
     config.coordinateSpaceOverride,
     config.boxOrderOverride,
     config.parseDialectOverride
@@ -71,15 +70,8 @@ export function computePromptFingerprint(config: ResolvedModelConfig, maxBoxes: 
   return crypto.createHash('sha256').update(payload).digest('hex').slice(0, 16)
 }
 
-export function getProfile(
-  config: ResolvedModelConfig,
-  maxBoxes: number
-): ModelProfile | null {
-  const key = profileId(
-    config.baseUrl,
-    config.model,
-    computePromptFingerprint(config, maxBoxes)
-  )
+export function getProfile(config: ResolvedModelConfig): ModelProfile | null {
+  const key = profileId(config.baseUrl, config.model, computePromptFingerprint(config))
   return loadProfiles().get(key) ?? null
 }
 
@@ -96,8 +88,7 @@ export function saveProfile(profile: ModelProfile): void {
  */
 export function applyProfileOverrides(
   base: ModelProfile | null,
-  config: ResolvedModelConfig,
-  maxBoxes: number
+  config: ResolvedModelConfig
 ): ModelProfile | null {
   const hasOverride =
     config.coordinateSpaceOverride !== 'auto' ||
@@ -109,7 +100,7 @@ export function applyProfileOverrides(
     unknownProfile(
       config.baseUrl,
       config.model,
-      computePromptFingerprint(config, maxBoxes)
+      computePromptFingerprint(config)
     )
   const next: ModelProfile = { ...profile }
   if (config.coordinateSpaceOverride !== 'auto') {
@@ -130,7 +121,6 @@ export function applyProfileOverrides(
     next.parseDialects.length > 0
   ) {
     next.localizationOk = true
-    next.maxBoxes = Math.max(next.maxBoxes, maxBoxes)
     next.notes = [...next.notes, '坐标空间与方言由运维手动指定']
   }
   return next

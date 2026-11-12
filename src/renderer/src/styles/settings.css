@@ -1,6 +1,58 @@
 /* Settings */
 .settings-page {
-  max-width: 980px;
+  max-width: 1060px;
+}
+
+/* 设置页顶部：标题右侧放横向二级菜单，保存按钮留在最右 */
+.settings-heading {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  min-width: 0;
+}
+
+.settings-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.settings-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 15px;
+  white-space: nowrap;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.settings-nav-item:hover {
+  background: var(--soft);
+  color: var(--text);
+}
+
+/* 选中态与侧边栏 nav-item 保持一致，用 --soft-2 填充 */
+.settings-nav-item.is-active {
+  background: var(--soft-2);
+  color: var(--text);
+  font-weight: 500;
+}
+
+.settings-content {
+  min-width: 0;
+}
+
+/* 内容区只有当前子页一张卡片，去掉卡片底部留白 */
+.settings-content > .settings-card {
+  margin-bottom: 0;
 }
 
 .settings-card {
@@ -116,6 +168,30 @@ input:focus {
 .input-unit > span {
   color: var(--text-3);
   font-size: 15px;
+}
+
+/* 发送方式：选择「分组」时，每组帧数直接内联在按钮后，不单独占一行 */
+.send-mode-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  min-height: 46px;
+}
+
+.send-group-size {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-2);
+  font-size: 15px;
+}
+
+.send-group-size input {
+  width: 84px;
+  height: 44px;
+  padding: 0 10px;
+  text-align: center;
 }
 
 .clear-key {

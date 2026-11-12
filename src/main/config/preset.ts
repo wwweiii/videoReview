@@ -16,8 +16,6 @@ export interface PresetDefaults {
   confidenceThreshold?: number
   /** 是否默认开启违禁物定位标记 */
   localize?: boolean
-  /** 默认每帧最大框数 */
-  maxBoxesPerFrame?: number
 }
 
 export interface PresetModelConfig {
@@ -79,9 +77,6 @@ function decodePreset(): PresetModelConfig | null {
       defaults.confidenceThreshold = Number(rawDefaults.confidenceThreshold)
     }
     if (typeof rawDefaults.localize === 'boolean') defaults.localize = rawDefaults.localize
-    if (Number.isFinite(Number(rawDefaults.maxBoxesPerFrame))) {
-      defaults.maxBoxesPerFrame = Number(rawDefaults.maxBoxesPerFrame)
-    }
     return {
       baseUrl: String(parsed.baseUrl),
       model: String(parsed.model),

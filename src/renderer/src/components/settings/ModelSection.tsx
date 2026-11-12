@@ -19,7 +19,7 @@ const COORDINATE_SPACE_OPTIONS: CoordinateSpace[] = [
 
 const BOX_ORDER_OPTIONS: BoxOrder[] = ['xyxy', 'yxyx']
 
-/** 设置页「模型」卡片：预设/自定义切换、连接参数、高级配置、测试连接 */
+/** 设置页「模型配置」子页卡片：预设/自定义切换、连接参数、高级配置、测试连接 */
 export function ModelSection({
   form,
   presetAvailable,
@@ -35,9 +35,29 @@ export function ModelSection({
   testResult: ConnectionTestResult | null
   onTest: () => void
 }): JSX.Element {
+  /** 测试连接按钮与结果：自定义模式下紧跟连接参数，预设模式下跟在预设/自定义切换之后。 */
+  const testActions = (
+    <div className="settings-actions">
+      <button
+        type="button"
+        className="button button-secondary"
+        onClick={onTest}
+        disabled={testing || (form.modelMode === 'custom' && !form.customValid)}
+      >
+        {testing ? <Loader2 size={16} className="spin" /> : null}
+        测试连接
+      </button>
+      {testResult ? (
+        <span className={`test-message ${testResult.ok ? 'is-success' : 'is-error'}`}>
+          {testResult.message}
+        </span>
+      ) : null}
+    </div>
+  )
+
   return (
     <section className="settings-card">
-      <h2>模型</h2>
+      <h2>模型配置</h2>
 
       {presetAvailable ? (
         <div className="segmented">
@@ -106,6 +126,8 @@ export function ModelSection({
               ) : null}
             </label>
           </div>
+
+          {testActions}
 
           <div className="form-subhead">高级配置</div>
           <div className="form-grid">
@@ -242,24 +264,9 @@ export function ModelSection({
             </label>
           </div>
         </>
-      ) : null}
-
-      <div className="settings-actions">
-        <button
-          type="button"
-          className="button button-secondary"
-          onClick={onTest}
-          disabled={testing || (form.modelMode === 'custom' && !form.customValid)}
-        >
-          {testing ? <Loader2 size={16} className="spin" /> : null}
-          测试连接
-        </button>
-        {testResult ? (
-          <span className={`test-message ${testResult.ok ? 'is-success' : 'is-error'}`}>
-            {testResult.message}
-          </span>
-        ) : null}
-      </div>
+      ) : (
+        testActions
+      )}
     </section>
   )
 }

@@ -3,7 +3,7 @@ import { clampNumber, normalizeInterval } from '@shared/format'
 import { MAX_CUSTOM_ITEM_LABEL_LENGTH, MAX_CUSTOM_PROHIBITED_ITEMS } from '@shared/defaults'
 import { DEFAULT_PROHIBITED_ITEMS, normalizeCustomItems } from '@shared/items'
 import { MAX_BEHAVIOR_ITEMS, MAX_BEHAVIOR_LABEL_LENGTH } from '@shared/defaults'
-import { normalizeBehaviorItems } from '@shared/behavior'
+import { normalizeBehaviorItems, normalizeBehaviorSampling } from '@shared/behavior'
 import type { BoxOrder, CoordinateSpace, PromptLanguage } from '@shared/localization'
 import type {
   AnalysisMode,
@@ -15,17 +15,12 @@ import type {
 } from '@shared/types'
 import type { ShowToast } from '../lib/ui'
 
-/** 每帧框数 1–20（与主进程一致） */
-function normalizeMaxBoxes(value: number): number {
-  return Math.round(clampNumber(value, 1, 20))
-}
-
 function normalizeMaxTokens(value: number): number {
   return Math.round(clampNumber(value, 128, 32768))
 }
 
 /**
- * 设置页表单状态与纯动作：模型/分析/检测物品字段、自定义物品增删勾选、
+ * 设置页表单状态与纯动作：模型/分析/检测物品/行为采样字段、自定义物品增删勾选、
  * 保存/测试/探测共用的请求体组装。
  *
  * 网络请求（保存/测试/探测）留在 SettingsPage，便于容器统一管理加载与结果状态。
@@ -63,7 +58,6 @@ export function useSettingsForm({
   const [analysisMode, setAnalysisMode] = useState<AnalysisMode>(settings.analysisMode)
   const [groupSize, setGroupSize] = useState(settings.groupSize)
   const [localize, setLocalize] = useState(settings.localize)
-  const [maxBoxesPerFrame, setMaxBoxesPerFrame] = useState(settings.maxBoxesPerFrame)
   const [items, setItems] = useState<string[]>(settings.prohibitedItems)
   const [customItems, setCustomItems] = useState<CustomProhibitedItem[]>(
     settings.customProhibitedItems
@@ -71,6 +65,9 @@ export function useSettingsForm({
   const [customItemLabel, setCustomItemLabel] = useState('')
   const [behaviorItems, setBehaviorItems] = useState<BehaviorItem[]>(settings.behaviorItems)
   const [behaviorLabel, setBehaviorLabel] = useState('')
+  const [behaviorWindowSec, setBehaviorWindowSec] = useState(settings.behaviorWindowSec)
+  const [behaviorStrideSec, setBehaviorStrideSec] = useState(settings.behaviorStrideSec)
+  const [behaviorFps, setBehaviorFps] = useState(settings.behaviorFps)
 
   const customValid = Boolean(baseUrl.trim() && modelName.trim())
   const selectedCustomIds = customItems
@@ -172,6 +169,12 @@ export function useSettingsForm({
   }
 
   function buildSavePayload(): SaveSettingsInput {
+    // 采样参数统一走 shared 归一化，避免渲染层与主进程的校验规则漂移
+    const sampling = normalizeBehaviorSampling({
+      windowSec: behaviorWindowSec,
+      strideSec: behaviorStrideSec,
+      fps: behaviorFps
+    })
     return {
       modelMode,
       customModel: buildCustomModel(),
@@ -186,7 +189,9 @@ export function useSettingsForm({
       analysisMode,
       groupSize,
       localize,
-      maxBoxesPerFrame: normalizeMaxBoxes(maxBoxesPerFrame)
+      behaviorWindowSec: sampling.windowSec,
+      behaviorStrideSec: sampling.strideSec,
+      behaviorFps: sampling.fps
     }
   }
 
@@ -223,8 +228,6 @@ export function useSettingsForm({
     setGroupSize,
     localize,
     setLocalize,
-    maxBoxesPerFrame,
-    setMaxBoxesPerFrame,
     items,
     customItems,
     customItemLabel,
@@ -232,6 +235,12 @@ export function useSettingsForm({
     behaviorItems,
     behaviorLabel,
     setBehaviorLabel,
+    behaviorWindowSec,
+    setBehaviorWindowSec,
+    behaviorStrideSec,
+    setBehaviorStrideSec,
+    behaviorFps,
+    setBehaviorFps,
     addBehaviorItem,
     removeBehaviorItem,
     customValid,

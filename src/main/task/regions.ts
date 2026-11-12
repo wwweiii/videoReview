@@ -71,14 +71,14 @@ export function createRegionRunner(
     if (!profilePromise) {
       profilePromise = (async () => {
         try {
-          profile = await ensureProfile(modelConfig, task.config.maxBoxesPerFrame, signal)
+          profile = await ensureProfile(modelConfig, signal)
           task.regionProfile = profile
         } catch (error) {
           if (signal.aborted) throw error
           profileError = error instanceof Error ? error.message : String(error)
           profile = null
           // 保留失败档案，UI 才能展示"定位不可用"的原因
-          task.regionProfile = getProfile(modelConfig, task.config.maxBoxesPerFrame)
+          task.regionProfile = getProfile(modelConfig)
         }
       })()
       profilePromise.catch(() => undefined)
@@ -143,8 +143,7 @@ export function createRegionRunner(
           timestampMs: frame.timestampMs,
           itemIds: task.config.prohibitedItems,
           customItems: task.config.customProhibitedItems,
-          focusCategories: frame.categories,
-          maxBoxes: task.config.maxBoxesPerFrame
+          focusCategories: frame.categories
         },
         signal
       )
