@@ -1,0 +1,17 @@
+node_modules/
+out/
+release/
+data/
+testdata/
+.tmp/
+*.log
+*.tsbuildinfo
+.DS_Store
+Thumbs.db
+
+# 加密预设含模型密钥（本地生成，勿提交）
+resources/config/preset.enc
+
+# 内置 ffmpeg 二进制体积大（约 80 MB/平台），不入库；用 npm run fetch:ffmpeg 下载
+resources/bin/*/x64/ffmpeg
+resources/bin/*/x64/ffmpeg.exe

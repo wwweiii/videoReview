@@ -1,0 +1,83 @@
+/* Workbench */
+.workbench-page {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.upload-panel {
+  flex: 1;
+  min-height: 420px;
+  margin-top: 28px;
+  display: flex;
+  flex-direction: column;
+  border: 1.5px dashed var(--line-2);
+  border-radius: 20px;
+  background: #ffffff;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease;
+}
+
+.upload-panel.is-dragging {
+  border-color: #b6bcc4;
+  background: #fdfdfd;
+}
+
+.upload-select {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 32px;
+  border: 0;
+  background: transparent;
+}
+
+.upload-select:disabled {
+  cursor: wait;
+}
+
+.upload-icon {
+  width: 82px;
+  height: 82px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 22px;
+  background: var(--soft);
+  color: #747c86;
+}
+
+.upload-title {
+  font-size: 21px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.upload-file {
+  max-width: 70%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-2);
+  font-size: 15px;
+}
+
+.workbench-actions {
+  display: flex;
+  justify-content: center;
+  padding-top: 20px;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.start-analysis {
+  min-width: 190px;
+  height: 46px;
+}
+

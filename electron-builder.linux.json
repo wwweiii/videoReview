@@ -1,0 +1,49 @@
+{
+  "appId": "com.csg.videoreview",
+  "productName": "视频智能审核",
+  "asar": true,
+  "directories": {
+    "output": "release",
+    "buildResources": "build"
+  },
+  "files": [
+    "out/**/*",
+    "package.json"
+  ],
+  "extraResources": [
+    {
+      "from": "resources/bin/linux",
+      "to": "bin/linux"
+    },
+    {
+      "from": "resources/config",
+      "to": "config",
+      "filter": [
+        "preset.enc"
+      ]
+    },
+    {
+      "from": "resources/icon.png",
+      "to": "icon.png"
+    }
+  ],
+  "linux": {
+    "target": [
+      {
+        "target": "dir",
+        "arch": [
+          "x64"
+        ]
+      }
+    ],
+    "category": "Utility",
+    "icon": "build/icon.png"
+  },
+  "electronDownload": {
+    "mirror": "https://cdn.npmmirror.com/binaries/electron/"
+  },
+  "electronLanguages": [
+    "zh-CN",
+    "en-US"
+  ]
+}

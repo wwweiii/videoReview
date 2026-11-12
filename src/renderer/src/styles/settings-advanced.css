@@ -1,0 +1,107 @@
+/* ---------------- 设置页：定位相关新控件 ---------------- */
+
+.form-subhead {
+  margin-top: 30px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+  color: var(--text-2);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.form-field textarea {
+  width: 100%;
+  min-height: 92px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  outline: none;
+  background: #ffffff;
+  color: var(--text);
+  font-family: "Consolas", "Menlo", "Courier New", monospace;
+  font-size: 14px;
+  line-height: 1.6;
+  resize: vertical;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.form-field textarea:focus {
+  border-color: #aeb5bd;
+  box-shadow: 0 0 0 3px #f1f3f5;
+}
+
+.form-field select {
+  width: 100%;
+  height: 46px;
+  padding: 0 12px;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  outline: none;
+  background: #ffffff;
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.form-field select:focus {
+  border-color: #aeb5bd;
+  box-shadow: 0 0 0 3px #f1f3f5;
+}
+
+.form-field input:disabled {
+  background: var(--soft);
+  color: var(--text-3);
+}
+
+.field-note {
+  color: var(--text-3);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.switch-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 46px;
+}
+
+.switch {
+  position: relative;
+  width: 46px;
+  height: 26px;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 1px solid var(--line-2);
+  border-radius: 99px;
+  background: var(--soft-2);
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease;
+}
+
+.switch.is-on {
+  border-color: var(--dark);
+  background: var(--dark);
+}
+
+.switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(31, 35, 41, 0.25);
+  transition: transform 0.16s ease;
+}
+
+.switch.is-on .switch-thumb {
+  transform: translateX(20px);
+}

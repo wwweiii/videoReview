@@ -1,0 +1,100 @@
+{
+  "name": "framelens",
+  "version": "0.1.0",
+  "description": "视频智能审核",
+  "main": "./out/main/index.js",
+  "author": "CSG",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "fetch:ffmpeg": "node scripts/fetch-ffmpeg.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "build:win": "electron-vite build && electron-builder --win --x64 --dir && node scripts/package-win.mjs",
+    "build:linux": "electron-vite build && electron-builder --linux dir --x64 --config electron-builder.linux.json && node scripts/package-linux.mjs",
+    "clean": "node scripts/clean.mjs",
+    "encrypt-preset": "node scripts/encrypt-preset.mjs",
+    "verify:localization": "node scripts/verify-localization.mjs",
+    "smoke:localization": "node scripts/smoke/run-e2e.mjs",
+    "verify": "npm run typecheck && npm run verify:localization && npm run smoke:localization"
+  },
+  "dependencies": {
+    "lucide-react": "^0.468.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.0",
+    "electron-vite": "^4.0.0",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0"
+  },
+  "build": {
+    "appId": "com.csg.videoreview",
+    "productName": "视频智能审核",
+    "asar": true,
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/bin/win32",
+        "to": "bin/win32"
+      },
+      {
+        "from": "resources/config",
+        "to": "config",
+        "filter": [
+          "preset.enc"
+        ]
+      },
+      {
+        "from": "resources/icon.png",
+        "to": "icon.png"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "dir",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "dir",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Utility",
+      "icon": "build/icon.png"
+    },
+    "electronDownload": {
+      "mirror": "https://cdn.npmmirror.com/binaries/electron/"
+    },
+    "electronLanguages": [
+      "zh-CN",
+      "en-US"
+    ]
+  }
+}

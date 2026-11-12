@@ -1,0 +1,89 @@
+@media (max-width: 1150px) {
+  .sidebar {
+    width: 216px;
+    flex-basis: 216px;
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+
+  .page {
+    padding: 38px 36px 52px;
+  }
+
+  .history-head,
+  .history-row {
+    grid-template-columns: minmax(0, 1fr) 150px 104px 58px 122px;
+    gap: 14px;
+    padding: 0 20px;
+  }
+
+  .frame-table-head,
+  .frame-row {
+    grid-template-columns: 235px 100px minmax(0, 1fr) 86px;
+    gap: 16px;
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+
+  .detail-top {
+    flex-wrap: wrap;
+  }
+
+  .detail-actions {
+    margin-left: 56px;
+  }
+}
+
+@media (max-width: 850px) {
+  .form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .span-2 {
+    grid-column: auto;
+  }
+
+  .history-head,
+  .history-row {
+    grid-template-columns: minmax(0, 1fr) 110px 58px 122px;
+  }
+
+  .history-head > span:nth-child(2),
+  .history-time {
+    display: none;
+  }
+
+  .frame-table-head,
+  .frame-row {
+    grid-template-columns: 210px 92px minmax(0, 1fr);
+  }
+
+  .frame-table-head > span:last-child,
+  .frame-confidence {
+    display: none;
+  }
+}
+
+
+@media (max-height: 680px) {
+  .page {
+    padding-top: 28px;
+    padding-bottom: 32px;
+  }
+
+  .upload-panel {
+    min-height: 330px;
+    margin-top: 20px;
+  }
+
+  .upload-select {
+    padding-top: 22px;
+    padding-bottom: 22px;
+  }
+
+  .workbench-actions {
+    padding-top: 16px;
+  }
+}
+

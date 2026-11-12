@@ -1,0 +1,20 @@
+/**
+ * 全局样式入口。
+ *
+ * 由原 src/renderer/src/styles.css 按原有 section 注释顺序逐字节拆分而成，
+ * 下方 @import 顺序即原文件顺序；拆分文件按序拼接与拆分前文件逐字节一致。
+ */
+
+@import './base.css';
+@import './layout.css';
+@import './workbench.css';
+@import './history.css';
+@import './badges.css';
+@import './task-detail.css';
+@import './drawer.css';
+@import './settings.css';
+@import './feedback.css';
+@import './responsive.css';
+@import './regions.css';
+@import './settings-advanced.css';
+@import './behavior.css';

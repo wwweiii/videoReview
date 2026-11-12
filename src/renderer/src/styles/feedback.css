@@ -1,0 +1,156 @@
+/* Toast */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 34px;
+  z-index: 120;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(520px, calc(100vw - 48px));
+  padding: 12px 14px;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  background: #ffffff;
+  color: var(--text);
+  box-shadow: 0 10px 30px rgba(31, 35, 41, 0.12);
+  font-size: 14px;
+  animation: toast-in 0.2s ease both;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 6px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.toast > span {
+  flex: 1;
+}
+
+.toast svg {
+  flex: 0 0 auto;
+  color: var(--text-2);
+}
+
+.toast-success svg {
+  color: var(--green);
+}
+
+.toast-error svg {
+  color: var(--red);
+}
+
+.toast-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-3);
+}
+
+.toast-close:hover {
+  background: var(--soft);
+}
+
+/* Dialog */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 130;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(31, 35, 41, 0.28);
+  animation: fade-in 0.15s ease both;
+}
+
+.confirm-dialog {
+  position: relative;
+  width: min(420px, 92vw);
+  padding: 28px;
+  border-radius: var(--radius);
+  background: #ffffff;
+  box-shadow: 0 20px 60px rgba(31, 35, 41, 0.18);
+}
+
+.confirm-dialog .dialog-close {
+  position: absolute;
+  right: 16px;
+  top: 16px;
+  width: 32px;
+  height: 32px;
+}
+
+.confirm-icon {
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+  border-radius: 11px;
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.confirm-icon-danger {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.confirm-dialog h2 {
+  margin: 0 0 8px;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.confirm-dialog p {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 26px;
+}
+
+/* Splash */
+.splash {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  background: #ffffff;
+  color: var(--text-2);
+  font-size: 16px;
+}
+
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
