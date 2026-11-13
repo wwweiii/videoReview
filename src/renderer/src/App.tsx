@@ -8,8 +8,29 @@ import { Toast, type ToastMessage } from './components/common/Toast'
 import { TaskDetailPage } from './pages/TaskDetailPage'
 import { TaskHistoryPage } from './pages/TaskHistoryPage'
 import { SettingsPage } from './pages/SettingsPage'
-import { WorkbenchPage } from './pages/WorkbenchPage'
+import { WorkbenchPage, type UploadedFile } from './pages/WorkbenchPage'
 import { friendlyError, type ShowToast } from './lib/ui'
+
+const UPLOADED_FILES_STORAGE_KEY = 'framelens.uploaded-files'
+
+function loadUploadedFiles(): UploadedFile[] {
+  try {
+    const raw = window.localStorage.getItem(UPLOADED_FILES_STORAGE_KEY)
+    if (!raw) return []
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter(
+      (item): item is UploadedFile =>
+        Boolean(item) &&
+        typeof item === 'object' &&
+        typeof (item as UploadedFile).path === 'string' &&
+        typeof (item as UploadedFile).name === 'string' &&
+        Boolean((item as UploadedFile).path.trim())
+    )
+  } catch {
+    return []
+  }
+}
 
 type View =
   | { name: 'home' }
@@ -30,6 +51,7 @@ function upsertTask(list: TaskSummary[], summary: TaskSummary): TaskSummary[] {
 export default function App(): React.JSX.Element {
   const [settings, setSettings] = useState<PublicSettings | null>(null)
   const [tasks, setTasks] = useState<TaskSummary[]>([])
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>(loadUploadedFiles)
   const [view, setView] = useState<View>({ name: 'home' })
   const [detailTask, setDetailTask] = useState<TaskRecord | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -42,6 +64,14 @@ export default function App(): React.JSX.Element {
   const currentTaskIdRef = useRef<string | null>(null)
   const currentTaskStatusRef = useRef<string | null>(null)
   const mainRef = useRef<HTMLElement | null>(null)
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(UPLOADED_FILES_STORAGE_KEY, JSON.stringify(uploadedFiles))
+    } catch {
+      // 本地存储不可用时仍保留当前会话中的文件列表。
+    }
+  }, [uploadedFiles])
 
   const showToast: ShowToast = useCallback((kind, message): void => {
     if (toastTimer.current) clearTimeout(toastTimer.current)
@@ -215,11 +245,28 @@ export default function App(): React.JSX.Element {
       <main className="app-main" ref={mainRef}>
         {view.name === 'home' ? (
           <WorkbenchPage
+            files={uploadedFiles}
+            tasks={tasks}
+            onFilesAdded={(newFiles) => {
+              setUploadedFiles((previous) => {
+                const next: UploadedFile[] = []
+                for (const file of newFiles) {
+                  if (!next.some((item) => item.path.toLowerCase() === file.path.toLowerCase())) next.push(file)
+                }
+                for (const file of previous) {
+                  if (!next.some((item) => item.path.toLowerCase() === file.path.toLowerCase())) next.push(file)
+                }
+                return next
+              })
+            }}
+            onFileRemoved={(filePath) => {
+              setUploadedFiles((previous) => previous.filter((file) => file.path !== filePath))
+            }}
             showToast={showToast}
             onStarted={(task) => {
               setTasks((previous) => upsertTask(previous, task))
-              openTask(task.id, task.kind ?? 'items')
             }}
+            onOpenTask={openTask}
           />
         ) : null}
 

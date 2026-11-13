@@ -33,7 +33,7 @@ export function registerIpcHandlers(): void {
     const window = BrowserWindow.fromWebContents(event.sender)
     const options: Electron.OpenDialogOptions = {
       title: '选择视频',
-      properties: ['openFile'],
+      properties: ['openFile', 'multiSelections'],
       filters: [
         { name: '视频文件', extensions: ['mp4', 'mov', 'mkv', 'webm', 'avi', 'm4v', 'ts'] }
       ]
@@ -42,7 +42,7 @@ export function registerIpcHandlers(): void {
       ? await dialog.showOpenDialog(window, options)
       : await dialog.showOpenDialog(options)
     if (result.canceled || result.filePaths.length === 0) return { canceled: true }
-    return { canceled: false, path: result.filePaths[0] }
+    return { canceled: false, path: result.filePaths[0], paths: result.filePaths }
   })
 
   ipcMain.handle('task:start', async (_event, filePath: string) => startReview(filePath))

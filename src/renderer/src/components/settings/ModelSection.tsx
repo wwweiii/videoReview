@@ -102,28 +102,11 @@ export function ModelSection({
               <input
                 type="password"
                 value={form.apiKey}
-                onChange={(event) => {
-                  form.setApiKey(event.target.value)
-                  if (event.target.value) form.setClearApiKey(false)
-                }}
+                onChange={(event) => form.setApiKey(event.target.value)}
                 placeholder={hasApiKey ? '已保存' : ''}
                 autoComplete="off"
                 spellCheck={false}
-                disabled={form.clearApiKey}
               />
-              {hasApiKey ? (
-                <label className="clear-key">
-                  <input
-                    type="checkbox"
-                    checked={form.clearApiKey}
-                    onChange={(event) => {
-                      form.setClearApiKey(event.target.checked)
-                      if (event.target.checked) form.setApiKey('')
-                    }}
-                  />
-                  清除密钥
-                </label>
-              ) : null}
             </label>
           </div>
 

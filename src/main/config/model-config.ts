@@ -87,9 +87,7 @@ export function getResolvedModelConfigForTesting(input: TestModelInput): Resolve
   if (input.modelMode === 'preset') return resolvePreset()
   validateCustomModel(input.customModel)
   const stored = loadSettings()
-  const apiKey = input.customModel.clearApiKey
-    ? ''
-    : input.customModel.apiKey?.trim() || readSavedApiKey(stored.customModel)
+  const apiKey = input.customModel.apiKey?.trim() || readSavedApiKey(stored.customModel)
   const runtime = applyRuntimeOverrides(input.customModel, {
     ...DEFAULT_MODEL_RUNTIME,
     ...stored.customModel

@@ -154,6 +154,8 @@ export interface TaskSummary {
   id: string
   kind?: TaskKind
   name: string
+  /** 原始视频路径，用于在工作台把上传文件与对应任务关联起来。 */
+  filePath?: string
   status: TaskStatus
   createdAt: string
   updatedAt: string
@@ -216,7 +218,6 @@ export interface CustomModelInput {
   baseUrl: string
   model: string
   apiKey?: string
-  clearApiKey?: boolean
   extraBody?: string
   maxTokens?: number
   imageMaxEdge?: number
@@ -290,4 +291,6 @@ export interface BehaviorWindowRecord extends FrameRecord {
 export interface FileDialogResult {
   canceled: boolean
   path?: string
+  /** 选择多个视频时返回完整路径列表；path 保留为首个文件的兼容字段。 */
+  paths?: string[]
 }

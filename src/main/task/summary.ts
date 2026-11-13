@@ -17,6 +17,7 @@ export function buildSummary(task: TaskRecord): TaskSummary {
     id: task.id,
     kind: task.kind ?? 'items',
     name: task.name,
+    filePath: task.source.filePath,
     status: task.status,
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,

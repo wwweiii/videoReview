@@ -42,7 +42,6 @@ export function SettingsPage({
       const saved = await window.framelens.saveSettings(form.buildSavePayload())
       onSaved(saved)
       form.setApiKey('')
-      form.setClearApiKey(false)
       setTestResult(null)
       showToast('success', '已保存')
     } catch (error) {

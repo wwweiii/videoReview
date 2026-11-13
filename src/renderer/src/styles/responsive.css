@@ -80,6 +80,20 @@
   .frame-confidence {
     display: none;
   }
+
+  .uploaded-file-row {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .uploaded-file-actions {
+    width: 100%;
+  }
+
+  .uploaded-file-task-button {
+    flex: 1;
+  }
 }
 
 
@@ -90,13 +104,14 @@
   }
 
   .upload-panel {
-    min-height: 330px;
+    min-height: 180px;
     margin-top: 20px;
   }
 
   .upload-select {
-    padding-top: 22px;
-    padding-bottom: 22px;
+    min-height: 180px;
+    padding-top: 14px;
+    padding-bottom: 14px;
   }
 
   .workbench-actions {

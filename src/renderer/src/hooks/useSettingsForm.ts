@@ -38,7 +38,6 @@ export function useSettingsForm({
   const [baseUrl, setBaseUrl] = useState(settings.customModel.baseUrl)
   const [modelName, setModelName] = useState(settings.customModel.model)
   const [apiKey, setApiKey] = useState('')
-  const [clearApiKey, setClearApiKey] = useState(false)
   const [extraBody, setExtraBody] = useState(settings.customModel.extraBody)
   const [maxTokens, setMaxTokens] = useState(settings.customModel.maxTokens)
   const [imageMaxEdge, setImageMaxEdge] = useState(settings.customModel.imageMaxEdge)
@@ -139,7 +138,6 @@ export function useSettingsForm({
       baseUrl: baseUrl.trim(),
       model: modelName.trim(),
       apiKey: apiKey.trim() || undefined,
-      clearApiKey,
       extraBody: extraBody.trim(),
       maxTokens: normalizeMaxTokens(maxTokens),
       imageMaxEdge,
@@ -204,8 +202,6 @@ export function useSettingsForm({
     setModelName,
     apiKey,
     setApiKey,
-    clearApiKey,
-    setClearApiKey,
     extraBody,
     setExtraBody,
     maxTokens,

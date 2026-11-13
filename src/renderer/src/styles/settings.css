@@ -194,25 +194,6 @@ input:focus {
   text-align: center;
 }
 
-.clear-key {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--text-3);
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.clear-key input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-  padding: 0;
-  border: 0;
-  border-radius: 3px;
-  box-shadow: none;
-  accent-color: var(--dark);
-}
-
 .settings-actions {
   display: flex;
   align-items: center;

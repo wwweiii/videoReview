@@ -75,7 +75,6 @@ export async function startBehaviorReview(filePath: string): Promise<TaskSummary
 }
 
 async function startTask(filePath: string, kind: TaskKind): Promise<TaskSummary> {
-  if (taskSession.activeRun) throw new Error('当前有任务正在处理')
   if (typeof filePath !== 'string' || !filePath.trim()) throw new Error('请选择视频文件')
 
   const modelConfig = getResolvedModelConfig()
@@ -88,7 +87,6 @@ async function startTask(filePath: string, kind: TaskKind): Promise<TaskSummary>
   }
 
   const source = await probeVideo(filePath)
-  if (taskSession.activeRun) throw new Error('当前有任务正在处理')
 
   const now = new Date().toISOString()
   const task: TaskRecord = {
@@ -119,7 +117,7 @@ async function startTask(filePath: string, kind: TaskKind): Promise<TaskSummary>
   emitSummary(task, true)
 
   const abortController = new AbortController()
-  taskSession.activeRun = { taskId: task.id, abortController, cancelRequested: false }
+  taskSession.activeRuns.set(task.id, { taskId: task.id, abortController, cancelRequested: false })
   const runner = kind === 'behavior' ? runBehaviorTask : runTask
   void runner(task, modelConfig, abortController).catch((error) => {
     logger.error('任务运行异常', error)
@@ -129,8 +127,8 @@ async function startTask(filePath: string, kind: TaskKind): Promise<TaskSummary>
 
 /** 只重跑定位（不重跑判定），用于换模型后补框 */
 export function relocalizeTask(taskId: string): TaskSummary {
-  if (taskSession.activeRun) throw new Error('当前有任务正在处理')
   const task = getTask(taskId)
+  if (taskSession.activeRuns.has(taskId)) throw new Error('任务正在处理')
   if (task.kind === 'behavior') throw new Error('行为任务不使用物品定位')
   if (!task.config.localize) throw new Error('当前任务未开启定位标记')
   const targets = regionCandidateFrames(task)
@@ -152,13 +150,13 @@ export function relocalizeTask(taskId: string): TaskSummary {
   emitSummary(task, true)
 
   const abortController = new AbortController()
-  taskSession.activeRun = { taskId: task.id, abortController, cancelRequested: false }
+  taskSession.activeRuns.set(task.id, { taskId: task.id, abortController, cancelRequested: false })
   void (async () => {
     try {
       await localizeFrames(task, modelConfig, abortController.signal, { onlyLocalize: true })
       await finishTask(task)
     } catch (error) {
-      const cancelled = abortController.signal.aborted && (taskSession.activeRun?.cancelRequested ?? false)
+      const cancelled = abortController.signal.aborted && (taskSession.activeRuns.get(task.id)?.cancelRequested ?? false)
       const message = error instanceof Error ? error.message : String(error)
       if (cancelled) {
         task.status = 'cancelled'
@@ -178,7 +176,7 @@ export function relocalizeTask(taskId: string): TaskSummary {
       await flushSave(task)
       emitSummary(task, true)
     } finally {
-      if (taskSession.activeRun?.taskId === task.id) taskSession.activeRun = null
+      taskSession.activeRuns.delete(task.id)
       clearSummaryThrottle(task.id)
     }
   })()
@@ -186,8 +184,8 @@ export function relocalizeTask(taskId: string): TaskSummary {
 }
 
 export function retryFailedFrames(taskId: string): TaskSummary {
-  if (taskSession.activeRun) throw new Error('当前有任务正在处理')
   const task = getTask(taskId)
+  if (taskSession.activeRuns.has(taskId)) throw new Error('任务正在处理')
   if (task.kind === 'behavior') {
     const failedWindows = (task.behaviorWindows ?? []).filter((window) => window.status === 'failed')
     if (failedWindows.length === 0) throw new Error('没有失败片段')
@@ -205,7 +203,7 @@ export function retryFailedFrames(taskId: string): TaskSummary {
     scheduleSave(task, true)
     emitSummary(task, true)
     const abortController = new AbortController()
-    taskSession.activeRun = { taskId: task.id, abortController, cancelRequested: false }
+    taskSession.activeRuns.set(task.id, { taskId: task.id, abortController, cancelRequested: false })
     void runBehaviorTask(task, modelConfig, abortController, true)
     return buildSummary(task)
   }
@@ -234,7 +232,7 @@ export function retryFailedFrames(taskId: string): TaskSummary {
   emitSummary(task, true)
 
   const abortController = new AbortController()
-  taskSession.activeRun = { taskId: task.id, abortController, cancelRequested: false }
+  taskSession.activeRuns.set(task.id, { taskId: task.id, abortController, cancelRequested: false })
   const indices = new Set(failed.map((frame) => frame.index))
   void (async () => {
     try {
@@ -245,7 +243,7 @@ export function retryFailedFrames(taskId: string): TaskSummary {
       })
       await finishTask(task)
     } catch (error) {
-      const cancelled = abortController.signal.aborted && (taskSession.activeRun?.cancelRequested ?? false)
+      const cancelled = abortController.signal.aborted && (taskSession.activeRuns.get(task.id)?.cancelRequested ?? false)
       const message = error instanceof Error ? error.message : String(error)
       if (cancelled) {
         task.status = 'cancelled'
@@ -260,28 +258,29 @@ export function retryFailedFrames(taskId: string): TaskSummary {
       await flushSave(task)
       emitSummary(task, true)
     } finally {
-      if (taskSession.activeRun?.taskId === task.id) taskSession.activeRun = null
+      taskSession.activeRuns.delete(task.id)
     }
   })()
   return buildSummary(task)
 }
 
 export function cancelActiveTask(taskId: string): boolean {
-  if (!taskSession.activeRun || taskSession.activeRun.taskId !== taskId) return false
-  taskSession.activeRun.cancelRequested = true
-  taskSession.activeRun.abortController.abort()
+  const run = taskSession.activeRuns.get(taskId)
+  if (!run) return false
+  run.cancelRequested = true
+  run.abortController.abort()
   return true
 }
 
 export function deleteTask(taskId: string): void {
   validateTaskId(taskId)
-  if (taskSession.activeRun?.taskId === taskId) throw new Error('任务正在处理')
+  if (taskSession.activeRuns.has(taskId)) throw new Error('任务正在处理')
   deleteStoredTask(taskId)
 }
 
 export function shutdownTaskManager(): void {
-  if (taskSession.activeRun) {
-    taskSession.activeRun.cancelRequested = true
-    taskSession.activeRun.abortController.abort()
+  for (const run of taskSession.activeRuns.values()) {
+    run.cancelRequested = true
+    run.abortController.abort()
   }
 }

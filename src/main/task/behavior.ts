@@ -18,7 +18,7 @@ export async function runBehaviorTask(
   controller: AbortController,
   retryOnly = false
 ): Promise<void> {
-  const run = taskSession.activeRun
+  const run = taskSession.activeRuns.get(task.id)
   try {
     const sampling = {
       ...BEHAVIOR_CONFIG,
@@ -109,7 +109,7 @@ export async function runBehaviorTask(
     await flushSave(task)
     emitSummary(task, true)
   } finally {
-    if (taskSession.activeRun?.taskId === task.id) taskSession.activeRun = null
+    taskSession.activeRuns.delete(task.id)
     clearSummaryThrottle(task.id)
   }
 }

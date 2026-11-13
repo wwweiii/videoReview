@@ -413,10 +413,7 @@ export function saveSettings(input: SaveSettingsInput): PublicSettings {
     ...applyRuntimeOverrides(input.customModel, current.customModel)
   }
 
-  if (input.customModel.clearApiKey) {
-    delete nextCustom.apiKeyEncrypted
-    delete nextCustom.apiKeyPlain
-  } else if (input.customModel.apiKey?.trim()) {
+  if (input.customModel.apiKey?.trim()) {
     delete nextCustom.apiKeyPlain
     Object.assign(nextCustom, protectApiKey(input.customModel.apiKey.trim()))
   }

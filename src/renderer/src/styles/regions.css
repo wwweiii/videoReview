@@ -202,7 +202,7 @@
   color: var(--red);
 }
 
-/* 结果列表缩略图上的迷你框 */
+/* 结果列表缩略图容器（缩略图不叠加定位框） */
 .frame-thumb-wrap {
   position: relative;
   width: 104px;
@@ -220,22 +220,5 @@
   height: 100%;
   border: 0;
   border-radius: 0;
-}
-
-.thumb-region-layer {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-.thumb-region {
-  position: absolute;
-  box-sizing: border-box;
-  border: 1px solid #ffffff;
-  box-shadow: 0 0 0 1px rgba(31, 35, 41, 0.45);
-}
-
-.thumb-region.is-suspicious {
-  border-style: dashed;
 }
 

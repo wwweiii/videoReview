@@ -13,7 +13,7 @@ export async function runTask(
   modelConfig: ResolvedModelConfig,
   abortController: AbortController
 ): Promise<void> {
-  const run = taskSession.activeRun
+  const run = taskSession.activeRuns.get(task.id)
   try {
     const extracted = await extractFrames({
       taskId: task.id,
@@ -78,7 +78,7 @@ export async function runTask(
     await flushSave(task)
     emitSummary(task, true)
   } finally {
-    if (taskSession.activeRun?.taskId === task.id) taskSession.activeRun = null
+    taskSession.activeRuns.delete(task.id)
     clearSummaryThrottle(task.id)
   }
 }
