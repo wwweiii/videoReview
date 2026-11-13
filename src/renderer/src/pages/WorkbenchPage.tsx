@@ -164,7 +164,7 @@ export function WorkbenchPage({
       >
         <button type="button" className="upload-select" onClick={() => void chooseFile()}>
           <span className="upload-icon">
-            {starting.size > 0 ? <Loader2 size={34} className="spin" /> : <FileVideo2 size={34} />}
+            <FileVideo2 size={34} />
           </span>
           <span className="upload-title">拖入或上传视频</span>
         </button>
