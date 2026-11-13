@@ -202,6 +202,10 @@ input:focus {
   margin-top: 24px;
 }
 
+.developer-mode-field {
+  margin-top: 24px;
+}
+
 .test-message {
   font-size: 14px;
 }

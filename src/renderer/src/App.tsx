@@ -297,6 +297,7 @@ export default function App(): React.JSX.Element {
           <TaskDetailPage
             task={detailTask}
             loading={detailLoading}
+            developerMode={settings.developerMode}
             onBack={() => navigate(view.taskKind === 'behavior' ? 'behavior-tasks' : 'tasks')}
             onRefresh={refreshCurrentTask}
             showToast={showToast}

@@ -14,6 +14,7 @@ import {
 export interface ResolvedModelConfig {
   mode: ModelMode
   label: string
+  developerMode: boolean
   baseUrl: string
   model: string
   apiKey: string
@@ -46,6 +47,7 @@ function resolvePreset(): ResolvedModelConfig {
   return {
     mode: 'preset',
     label: '预设',
+    developerMode: loadSettings().developerMode,
     baseUrl: preset.baseUrl,
     model: preset.model,
     apiKey: preset.apiKey,
@@ -66,6 +68,7 @@ export function getResolvedModelConfig(): ResolvedModelConfig {
   return {
     mode: 'custom',
     label: stored.customModel.model,
+    developerMode: stored.developerMode,
     baseUrl: stored.customModel.baseUrl,
     model: stored.customModel.model,
     apiKey: readSavedApiKey(stored.customModel),
@@ -95,6 +98,7 @@ export function getResolvedModelConfigForTesting(input: TestModelInput): Resolve
   return {
     mode: 'custom',
     label: input.customModel.model.trim(),
+    developerMode: stored.developerMode,
     baseUrl: input.customModel.baseUrl.trim(),
     model: input.customModel.model.trim(),
     apiKey,

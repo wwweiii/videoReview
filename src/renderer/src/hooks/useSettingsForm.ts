@@ -53,6 +53,7 @@ export function useSettingsForm({
   const [boxOrderOverride, setBoxOrderOverride] = useState<'auto' | BoxOrder>(
     settings.customModel.boxOrderOverride
   )
+  const [developerMode, setDeveloperMode] = useState(settings.developerMode)
   const [intervalSec, setIntervalSec] = useState(settings.intervalSec)
   const [analysisMode, setAnalysisMode] = useState<AnalysisMode>(settings.analysisMode)
   const [groupSize, setGroupSize] = useState(settings.groupSize)
@@ -176,6 +177,7 @@ export function useSettingsForm({
     return {
       modelMode,
       customModel: buildCustomModel(),
+      developerMode,
       intervalSec: normalizeInterval(intervalSec),
       // 内置四项固定包含，只追加选中的自定义物品
       prohibitedItems: [
@@ -216,6 +218,8 @@ export function useSettingsForm({
     setCoordinateSpaceOverride,
     boxOrderOverride,
     setBoxOrderOverride,
+    developerMode,
+    setDeveloperMode,
     intervalSec,
     setIntervalSec,
     analysisMode,

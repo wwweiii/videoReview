@@ -79,6 +79,7 @@ export async function runBehaviorTask(
           analyzedAt: new Date().toISOString(),
           model: modelConfig.label
         })
+        if (result.traces.length > 0) window.callTraces.push(...result.traces)
       } catch (error) {
         if (controller.signal.aborted || error instanceof FatalModelError) throw error
         window.status = 'failed'

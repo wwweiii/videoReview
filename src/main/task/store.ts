@@ -31,7 +31,8 @@ export function newFrame(index: number, timestampMs: number, fileName: string): 
     regionLevel: 'L0',
     regionModel: '',
     regionError: '',
-    regionRaw: ''
+    regionRaw: '',
+    callTraces: []
   }
 }
 
@@ -69,7 +70,8 @@ function normalizeTask(raw: TaskRecord): TaskRecord {
       regionLevel: frame.regionLevel || 'L0',
       regionModel: frame.regionModel || '',
       regionError: frame.regionError || '',
-      regionRaw: frame.regionRaw || ''
+      regionRaw: frame.regionRaw || '',
+      callTraces: Array.isArray(frame.callTraces) ? frame.callTraces : []
     }))
   }
 }

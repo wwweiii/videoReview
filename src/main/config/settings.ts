@@ -55,6 +55,7 @@ export interface StoredCustomModel {
 export interface StoredSettings {
   modelMode: ModelMode
   customModel: StoredCustomModel
+  developerMode: boolean
   intervalSec: number
   prohibitedItems: string[]
   customProhibitedItems: CustomProhibitedItem[]
@@ -99,6 +100,7 @@ function defaultStoredSettings(): StoredSettings {
   const presetDefaults = preset?.defaults ?? {}
   return {
     modelMode: preset ? 'preset' : 'custom',
+    developerMode: false,
     customModel: {
       baseUrl: '',
       model: '',
@@ -189,6 +191,7 @@ function normalizeStored(raw: Partial<StoredSettings>): StoredSettings {
   return {
     modelMode:
       raw.modelMode === 'preset' || raw.modelMode === 'custom' ? raw.modelMode : defaults.modelMode,
+    developerMode: typeof raw.developerMode === 'boolean' ? raw.developerMode : defaults.developerMode,
     customModel: {
       baseUrl: typeof custom.baseUrl === 'string' ? custom.baseUrl : '',
       model: typeof custom.model === 'string' ? custom.model : '',
@@ -316,6 +319,7 @@ export function getPublicSettings(): PublicSettings {
   return {
     modelMode: stored.modelMode,
     presetAvailable: isPresetAvailable(),
+    developerMode: stored.developerMode,
     customModel: {
       baseUrl: stored.customModel.baseUrl,
       model: stored.customModel.model,
@@ -426,6 +430,7 @@ export function saveSettings(input: SaveSettingsInput): PublicSettings {
   cachedSettings = {
     ...current,
     modelMode: input.modelMode,
+    developerMode: Boolean(input.developerMode),
     customModel: nextCustom,
     intervalSec: normalizeInterval(input.intervalSec),
     prohibitedItems: selectedItems,

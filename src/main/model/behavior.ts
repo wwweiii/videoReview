@@ -54,7 +54,8 @@ export function parseBehaviorAnalysis(raw: string, behaviorLabels: string[]): Pa
     evidence: result.evidence.trim(),
     confidence,
     needHumanReview: result.need_human_review || inconsistent || confidence === null,
-    raw
+    raw,
+    traces: []
   }
 }
 
@@ -134,12 +135,19 @@ export async function analyzeBehaviorWindow(
     }
     if ('enable_thinking' in extra) extra.enable_thinking = false
   }
-  const { content } = await requestChat(
+  const { content, traces } = await requestChat(
     { ...config, extraBody: JSON.stringify(extra) },
     buildBehaviorMessages(window, framesDir, behaviorLabels, fps),
-    { signal, maxTokens: Math.min(config.maxTokens, 1200), maxAttempts: 1, requireComplete: true }
+    {
+      signal,
+      maxTokens: Math.min(config.maxTokens, 1200),
+      maxAttempts: 1,
+      requireComplete: true,
+      operation: '行为判定'
+    }
   )
   const analysis = parseBehaviorAnalysis(content, behaviorLabels)
+  analysis.traces = traces
   if (window.samples.length < 2) {
     analysis.needHumanReview = true
     analysis.description ||= '片段过短，连续动作证据不足，请人工复核。'

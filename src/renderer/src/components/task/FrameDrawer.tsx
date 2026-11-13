@@ -7,6 +7,7 @@ import { regionNotice, regionNoticeTone } from '../../lib/region'
 import { frameImageUrl } from '../../lib/ui'
 import { RegionList } from './RegionList'
 import { RegionOverlay } from './RegionOverlay'
+import { CallTraceDrawer } from './CallTraceDrawer'
 
 /**
  * 帧详情抽屉：预览图 + 检测框叠层 + 检测对象列表 + 结论/证据。
@@ -20,7 +21,8 @@ export function FrameDrawer({
   position,
   onClose,
   onPrevious,
-  onNext
+  onNext,
+  developerMode
 }: {
   task: TaskRecord
   frame: FrameRecord
@@ -28,18 +30,21 @@ export function FrameDrawer({
   onClose: () => void
   onPrevious: () => void
   onNext: () => void
+  developerMode: boolean
 }): JSX.Element {
   const [imageLoaded, setImageLoaded] = useState(false)
   const [imageError, setImageError] = useState(false)
   // 允许同时固定多个检测对象
   const [pinnedRegionIds, setPinnedRegionIds] = useState<string[]>([])
   const [hoverRegionId, setHoverRegionId] = useState<string | null>(null)
+  const [traceOpen, setTraceOpen] = useState(false)
 
   useEffect(() => {
     setImageLoaded(false)
     setImageError(false)
     setPinnedRegionIds([])
     setHoverRegionId(null)
+    setTraceOpen(false)
   }, [frame.fileName])
 
   const regions = frame.regions
@@ -177,8 +182,18 @@ export function FrameDrawer({
           ) : (
             <p className="drawer-normal">{frame.verdict === 'normal' ? '无异常' : '分析中'}</p>
           )}
+          {developerMode ? (
+            <div className="drawer-trace-action">
+              <button type="button" className="button button-secondary" onClick={() => setTraceOpen(true)}>
+                调用轨迹
+              </button>
+            </div>
+          ) : null}
         </div>
       </aside>
+      {developerMode && traceOpen ? (
+        <CallTraceDrawer traces={frame.callTraces ?? []} onClose={() => setTraceOpen(false)} />
+      ) : null}
     </div>
   )
 }

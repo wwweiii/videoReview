@@ -52,6 +52,22 @@ export type FrameStatus = 'pending' | 'analyzing' | 'completed' | 'failed'
 export type Verdict = 'pending' | 'normal' | 'abnormal' | 'review' | 'failed'
 export type RiskLevel = 'high' | 'medium' | 'low' | 'none'
 
+/** 开发者模式下保留的一次模型调用完整轨迹。 */
+export interface ModelCallTrace {
+  operation: string
+  startedAt: string
+  finishedAt: string
+  latencyMs: number
+  endpoint: string
+  status: number | null
+  requestBody: string
+  responseBody: string
+  promptTokens: number | null
+  completionTokens: number | null
+  totalTokens: number | null
+  error: string
+}
+
 /* ------------------------------ 定位标记 ------------------------------ */
 
 export type RegionStatus = 'none' | 'pending' | 'ok' | 'failed' | 'unsupported'
@@ -128,6 +144,8 @@ export interface FrameRecord {
   regionModel: string
   regionError: string
   regionRaw: string
+  /** 开发者模式下的判定/定位调用轨迹。 */
+  callTraces: ModelCallTrace[]
 }
 
 export interface TaskRecord {
@@ -199,6 +217,8 @@ export interface PublicSettings {
   modelMode: ModelMode
   presetAvailable: boolean
   customModel: CustomModelPublic
+  /** 是否记录并在任务抽屉中显示模型调用轨迹。 */
+  developerMode: boolean
   intervalSec: number
   prohibitedItems: string[]
   customProhibitedItems: CustomProhibitedItem[]
@@ -231,6 +251,7 @@ export interface CustomModelInput {
 export interface SaveSettingsInput {
   modelMode: ModelMode
   customModel: CustomModelInput
+  developerMode: boolean
   intervalSec: number
   prohibitedItems: string[]
   customProhibitedItems: CustomProhibitedItem[]

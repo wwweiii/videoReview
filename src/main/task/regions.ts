@@ -157,6 +157,7 @@ export function createRegionRunner(
           ? `定位结果与判定对象不一致（已过滤 ${result.filteredOut} 个框）`
           : ''
       frame.regionRaw = result.raw
+      if (result.traces.length > 0) frame.callTraces.push(...result.traces)
       located += 1
       failures = 0
       if (result.usedOriginGrid) {

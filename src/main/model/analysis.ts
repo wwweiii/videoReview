@@ -1,5 +1,5 @@
 import { canonicalizeItemLabel } from '@shared/items'
-import type { CustomProhibitedItem, RiskLevel } from '@shared/types'
+import type { CustomProhibitedItem, ModelCallTrace, RiskLevel } from '@shared/types'
 import type { ResolvedModelConfig } from '../config/model-config'
 import { requestChat } from './client'
 import { buildGroupMessages, buildSingleMessages } from './prompts'
@@ -13,6 +13,7 @@ export interface ParsedAnalysis {
   confidence: number | null
   needHumanReview: boolean
   raw: string
+  traces: ModelCallTrace[]
 }
 
 export function extractJsonValue(text: string): unknown {
@@ -160,7 +161,8 @@ function parseAnalysisObject(
     evidence: firstString(value.evidence, value.reason, value.explanation, value.basis),
     confidence: normalizeConfidence(value.confidence ?? value.score),
     needHumanReview,
-    raw
+    raw,
+    traces: []
   }
 }
 
@@ -180,18 +182,23 @@ export async function analyzeSingleFrame(
   signal?: AbortSignal
 ): Promise<ParsedAnalysis> {
   let lastParseError: Error | null = null
+  const allTraces: ModelCallTrace[] = []
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const messages = buildSingleMessages(filePath, timestampMs, itemIds, customItems)
-    const { content } = await requestChat(config, messages, { signal })
+    const { content, traces } = await requestChat(config, messages, {
+      signal,
+      operation: '物品判定'
+    })
+    allTraces.push(...traces)
     try {
       const parsed = extractJsonValue(content)
       const object = extractObject(parsed)
       if (Array.isArray(object.frames)) {
         const first = object.frames[0]
-        return parseAnalysisObject(extractObject(first), content, customItems)
+        return { ...parseAnalysisObject(extractObject(first), content, customItems), traces: allTraces }
       }
-      return parseAnalysisObject(object, content, customItems)
+      return { ...parseAnalysisObject(object, content, customItems), traces: allTraces }
     } catch (error) {
       lastParseError = error instanceof Error ? error : new Error(String(error))
       if (attempt === 0) continue
@@ -207,11 +214,12 @@ export async function analyzeFrameGroup(
   customItems: CustomProhibitedItem[],
   frames: Array<{ filePath: string; timestampMs: number }>,
   signal?: AbortSignal
-): Promise<Map<number, ParsedAnalysis>> {
+): Promise<{ analyses: Map<number, ParsedAnalysis>; traces: ModelCallTrace[] }> {
   const messages = buildGroupMessages(frames, itemIds, customItems)
-  const { content } = await requestChat(config, messages, {
+  const { content, traces } = await requestChat(config, messages, {
     maxTokens: Math.max(700, frames.length * 350),
-    signal
+    signal,
+    operation: '物品分组判定'
   })
 
   const parsed = extractJsonValue(content)
@@ -227,12 +235,12 @@ export async function analyzeFrameGroup(
         const index = Number(indexValue)
         if (!Number.isInteger(index) || index < 0 || index >= frames.length) return
         if (result.has(index)) return
-        result.set(index, parseAnalysisObject(object, content, customItems))
+        result.set(index, { ...parseAnalysisObject(object, content, customItems), traces })
       } catch {
         // A malformed item is treated as a missing result for that frame.
       }
     })
-    return result
+    return { analyses: result, traces }
   }
 
   if (Array.isArray(parsed)) {
@@ -240,13 +248,13 @@ export async function analyzeFrameGroup(
       try {
         const object = extractObject(item)
         if (position < frames.length) {
-          result.set(position, parseAnalysisObject(object, content, customItems))
+          result.set(position, { ...parseAnalysisObject(object, content, customItems), traces })
         }
       } catch {
         // Ignore malformed entries; handled as missing by the caller.
       }
     })
-    return result
+    return { analyses: result, traces }
   }
 
   throw new Error('模型返回格式异常')

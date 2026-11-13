@@ -69,7 +69,7 @@ export async function analyzeFrames(
           )
           applyAnalysis(group[0], analysis, task.config.confidenceThreshold, modelConfig.label)
         } else {
-          const analyses = await analyzeFrameGroup(
+          const groupResult = await analyzeFrameGroup(
             modelConfig,
             task.config.prohibitedItems,
             task.config.customProhibitedItems,
@@ -79,6 +79,7 @@ export async function analyzeFrames(
             })),
             signal
           )
+          const analyses = groupResult.analyses
           for (const frame of group) {
             const analysis = analyses.get(group.indexOf(frame))
             if (analysis) {
@@ -89,6 +90,7 @@ export async function analyzeFrames(
               frame.error = '未返回该帧结果'
               frame.analyzedAt = new Date().toISOString()
               frame.model = modelConfig.label
+              if (modelConfig.developerMode) frame.callTraces.push(...groupResult.traces)
             }
           }
         }
@@ -155,6 +157,7 @@ function applyAnalysis(
   frame.rawResponse = analysis.raw
   frame.analyzedAt = new Date().toISOString()
   frame.model = modelLabel
+  if (analysis.traces.length > 0) frame.callTraces.push(...analysis.traces)
 }
 
 function updateProgress(task: TaskRecord, counts?: RegionCounts): void {

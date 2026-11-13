@@ -10,7 +10,7 @@ import {
   parseGrounding,
   validateBox
 } from '@shared/localization/dialects'
-import type { CustomProhibitedItem, RegionRecord } from '@shared/types'
+import type { CustomProhibitedItem, ModelCallTrace, RegionRecord } from '@shared/types'
 import type { ResolvedModelConfig } from '../config/model-config'
 import { logger } from '../logger'
 import { requestChat } from '../model/client'
@@ -104,6 +104,7 @@ export interface LocalizeFrameResult {
   filteredOut: number
   /** 坐标疑似按原图像素返回，已按原图尺寸换算 */
   usedOriginGrid: boolean
+  traces: ModelCallTrace[]
 }
 
 const MAX_PARSE_DIALECTS = 4
@@ -185,10 +186,11 @@ export async function localizeFrame(
     }
   ]
 
-  const { content } = await requestChat(config, messages, {
+  const { content, traces } = await requestChat(config, messages, {
     maxTokens: Math.max(config.maxTokens, 1200),
     timeoutSec: Math.min(config.timeoutSec, 60),
-    signal
+    signal,
+    operation: '违禁物定位'
   })
 
   // 先用"发送尺寸"解析；absolute_px 下部分网关会按原图像素返回，自动按原图尺寸兜底
@@ -256,6 +258,7 @@ export async function localizeFrame(
     prepared,
     focusLabels,
     filteredOut,
-    usedOriginGrid: adaptive.usedOrigin
+    usedOriginGrid: adaptive.usedOrigin,
+    traces
   }
 }

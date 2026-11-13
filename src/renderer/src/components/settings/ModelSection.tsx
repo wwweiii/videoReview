@@ -123,9 +123,6 @@ export function ModelSection({
                 spellCheck={false}
                 rows={3}
               />
-              <span className="field-note">
-                透传给服务端的额外字段，留空表示不发送；必须是 JSON 对象。
-              </span>
             </label>
 
             <label className="form-field">
@@ -160,10 +157,6 @@ export function ModelSection({
                   </option>
                 ))}
               </select>
-              <span className="field-hint">
-                只影响“定位请求”的图片大小；判定请求仍用原始帧。外部接口建议保持默认 1120，
-                越大越慢，且部分网关会内部缩放导致框偏移。
-              </span>
             </label>
 
             <div className="form-field">
@@ -184,9 +177,6 @@ export function ModelSection({
                   JPEG
                 </button>
               </div>
-              <span className="field-hint">
-                外部接口建议用 JPEG：体积约为 PNG 的 1/5～1/10，上传更快，框的位置通常不受影响。
-              </span>
             </div>
 
             <div className="form-field">
@@ -226,7 +216,6 @@ export function ModelSection({
                   </option>
                 ))}
               </select>
-              <span className="field-note">自动探测失败时可在此手动指定。</span>
             </label>
 
             <label className="form-field">
@@ -250,6 +239,22 @@ export function ModelSection({
       ) : (
         testActions
       )}
+
+      <div className="form-field developer-mode-field">
+        <span>开发者模式</span>
+        <div className="switch-row">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={form.developerMode}
+            aria-label="开发者模式"
+            className={`switch ${form.developerMode ? 'is-on' : ''}`}
+            onClick={() => form.setDeveloperMode((value) => !value)}
+          >
+            <span className="switch-thumb" />
+          </button>
+        </div>
+      </div>
     </section>
   )
 }
