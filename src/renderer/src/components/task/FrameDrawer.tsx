@@ -69,63 +69,67 @@ export function FrameDrawer({
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="drawer-head">
-          <h2>{formatTimeMs(frame.timestampMs)}</h2>
-          <button type="button" className="icon-button" onClick={onClose} aria-label="关闭">
-            <X size={19} />
-          </button>
-        </div>
-
-        <div className="drawer-image-wrap frame-viewport">
-          {!imageLoaded && !imageError ? (
-            <div className="image-state">
-              <Loader2 size={22} className="spin" />
-            </div>
-          ) : null}
-          {imageError ? (
-            <div className="image-state">
-              <ImageOff size={22} />
-            </div>
-          ) : (
-            <div className="frame-stage">
-              <img
-                className={`frame-stage-image ${imageLoaded ? 'is-loaded' : ''}`}
-                src={frameImageUrl(task.id, frame.fileName, false)}
-                alt=""
-                onLoad={() => setImageLoaded(true)}
-                onError={() => setImageError(true)}
-              />
-              {imageLoaded && visibleRegions.length > 0 ? (
-                <RegionOverlay
-                  regions={visibleRegions}
-                  pinnedRegionIds={pinnedRegionIds}
-                  hoverRegionId={hoverRegionId}
-                  onToggleRegion={toggleRegion}
-                  onHoverRegion={setHoverRegionId}
-                />
-              ) : null}
-            </div>
-          )}
-          <button
-            type="button"
-            className="drawer-nav left"
-            onClick={onPrevious}
-            disabled={position <= 0}
-            aria-label="上一帧"
-          >
-            <ChevronLeft size={20} />
-          </button>
-          <button
-            type="button"
-            className="drawer-nav right"
-            onClick={onNext}
-            disabled={position >= task.frames.length - 1}
-            aria-label="下一帧"
-          >
-            <ChevronRight size={20} />
-          </button>
+          <div className="drawer-head-title">
+            <h2>{formatTimeMs(frame.timestampMs)}</h2>
+            <button
+              type="button"
+              className="button button-secondary button-sm drawer-head-nav"
+              onClick={onPrevious}
+              disabled={position <= 0}
+            >
+              <ChevronLeft size={16} />
+              上一帧
+            </button>
+          </div>
+          <div className="drawer-head-actions">
+            <button
+              type="button"
+              className="button button-secondary button-sm drawer-head-nav"
+              onClick={onNext}
+              disabled={position >= task.frames.length - 1}
+            >
+              下一帧
+              <ChevronRight size={16} />
+            </button>
+            <button type="button" className="icon-button" onClick={onClose} aria-label="关闭">
+              <X size={19} />
+            </button>
+          </div>
         </div>
 
         <div className="drawer-body">
+          <div className="drawer-image-wrap frame-viewport">
+            {!imageLoaded && !imageError ? (
+              <div className="image-state">
+                <Loader2 size={22} className="spin" />
+              </div>
+            ) : null}
+            {imageError ? (
+              <div className="image-state">
+                <ImageOff size={22} />
+              </div>
+            ) : (
+              <div className="frame-stage">
+                <img
+                  className={`frame-stage-image ${imageLoaded ? 'is-loaded' : ''}`}
+                  src={frameImageUrl(task.id, frame.fileName, false)}
+                  alt=""
+                  onLoad={() => setImageLoaded(true)}
+                  onError={() => setImageError(true)}
+                />
+                {imageLoaded && visibleRegions.length > 0 ? (
+                  <RegionOverlay
+                    regions={visibleRegions}
+                    pinnedRegionIds={pinnedRegionIds}
+                    hoverRegionId={hoverRegionId}
+                    onToggleRegion={toggleRegion}
+                    onHoverRegion={setHoverRegionId}
+                  />
+                ) : null}
+              </div>
+            )}
+          </div>
+
           <div className="drawer-badges">
             <VerdictBadge verdict={frame.verdict} />
             <span className="drawer-confidence">
@@ -173,27 +177,6 @@ export function FrameDrawer({
           ) : (
             <p className="drawer-normal">{frame.verdict === 'normal' ? '无异常' : '分析中'}</p>
           )}
-        </div>
-
-        <div className="drawer-footer">
-          <button
-            type="button"
-            className="button button-secondary"
-            onClick={onPrevious}
-            disabled={position <= 0}
-          >
-            <ChevronLeft size={17} />
-            上一帧
-          </button>
-          <button
-            type="button"
-            className="button button-secondary"
-            onClick={onNext}
-            disabled={position >= task.frames.length - 1}
-          >
-            下一帧
-            <ChevronRight size={17} />
-          </button>
         </div>
       </aside>
     </div>

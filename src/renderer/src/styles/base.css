@@ -18,6 +18,8 @@
   --green-soft: #eff5f1;
   --radius: 16px;
   --radius-sm: 10px;
+  --sidebar-width: 240px;
+  --preview-max-height: 56vh;
   --font: "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans SC", "Segoe UI",
     sans-serif;
 }

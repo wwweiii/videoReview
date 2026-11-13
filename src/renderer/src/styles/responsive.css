@@ -1,7 +1,9 @@
 @media (max-width: 1150px) {
+  :root {
+    --sidebar-width: 216px;
+  }
+
   .sidebar {
-    width: 216px;
-    flex-basis: 216px;
     padding-left: 14px;
     padding-right: 14px;
   }

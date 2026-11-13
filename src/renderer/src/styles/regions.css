@@ -5,7 +5,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  max-height: 43vh;
+  max-height: var(--preview-max-height);
+  margin-bottom: 20px;
   overflow: hidden;
   background: var(--soft);
 }
@@ -23,7 +24,7 @@
   width: auto;
   height: auto;
   max-width: 100%;
-  max-height: 43vh;
+  max-height: var(--preview-max-height);
   object-fit: contain;
   opacity: 0;
   transition: opacity 0.2s ease;
@@ -72,11 +73,6 @@
 
 .region-rect.is-dim {
   opacity: 0.32;
-}
-
-/* 帧内左右切帧按钮始终盖在框/标签之上 */
-.frame-viewport .drawer-nav {
-  z-index: 2;
 }
 
 .region-label {

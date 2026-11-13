@@ -134,8 +134,19 @@ function BehaviorPreview({ task, window: segment, onClose, onPrevious, onNext }:
   const sample = segment.samples[sampleIndex] ?? segment.samples[0]
   return <div className="drawer-backdrop" onClick={onClose}>
     <section className="drawer behavior-drawer" role="dialog" aria-modal="true" aria-labelledby="behavior-preview-title" onClick={(event) => event.stopPropagation()}>
-      <header className="drawer-head"><h2 id="behavior-preview-title">{behaviorTime(segment.timestampMs)} — {behaviorTime(segment.endTimestampMs)}</h2>
-        <button type="button" ref={closeButton} className="icon-button" aria-label="关闭" onClick={onClose}><X size={20} /></button>
+      <header className="drawer-head">
+        <div className="drawer-head-title">
+          <h2 id="behavior-preview-title">{behaviorTime(segment.timestampMs)} — {behaviorTime(segment.endTimestampMs)}</h2>
+          <button type="button" className="button button-secondary button-sm drawer-head-nav" onClick={onPrevious} disabled={!onPrevious}>
+            <ChevronLeft size={16} />上一片段
+          </button>
+        </div>
+        <div className="drawer-head-actions">
+          <button type="button" className="button button-secondary button-sm drawer-head-nav" onClick={onNext} disabled={!onNext}>
+            下一片段<ChevronRight size={16} />
+          </button>
+          <button type="button" ref={closeButton} className="icon-button" aria-label="关闭" onClick={onClose}><X size={20} /></button>
+        </div>
       </header>
       <div className="drawer-body behavior-preview-body">
         {videoError ? <>
@@ -165,10 +176,6 @@ function BehaviorPreview({ task, window: segment, onClose, onPrevious, onNext }:
         <section className="drawer-section"><h3>行为说明</h3><p>{segment.description || (segment.verdict === 'normal' ? '未发现设置中的指定行为。' : '暂无说明')}</p></section>
         <section className="drawer-section"><h3>可见证据</h3><p>{segment.evidence || '暂无证据'}</p></section>
         {segment.error ? <p className="frame-error">{segment.error}</p> : null}
-        <div className="behavior-preview-actions">
-          <button type="button" className="button button-secondary" onClick={onPrevious} disabled={!onPrevious}><ChevronLeft size={16} />上一片段</button>
-          <button type="button" className="button button-secondary" onClick={onNext} disabled={!onNext}>下一片段<ChevronRight size={16} /></button>
-        </div>
       </div>
     </section>
   </div>

@@ -15,12 +15,12 @@
 .behavior-time-cell { font-size: 14px; gap: 10px; }
 .behavior-time-cell .frame-thumb { width: 84px; height: 52px; }
 .behavior-time-end { color: var(--text-3); font-size: 12px; }
-.behavior-drawer { width: min(760px, 88vw); }
+.behavior-drawer { width: calc(100vw - var(--sidebar-width)); }
 .behavior-preview-body { padding-top: 18px; }
 .behavior-video, .behavior-still {
   display: block;
   width: 100%;
-  max-height: 36vh;
+  max-height: var(--preview-max-height);
   min-height: 160px;
   object-fit: contain;
   border-radius: 10px;
