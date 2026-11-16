@@ -16,7 +16,6 @@ export function RegionList({
 }): JSX.Element {
   return (
     <section className="drawer-section region-list">
-      <h3>检测对象</h3>
       <ul className="region-items">
         {regions.map((region) => {
           const isActive = pinnedRegionIds.includes(region.id)
