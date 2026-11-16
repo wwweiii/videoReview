@@ -12,7 +12,7 @@
 .history-head,
 .history-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 180px 112px 70px 132px;
+  grid-template-columns: minmax(0, 1fr) 180px 112px 70px 56px;
   align-items: center;
   gap: 22px;
   padding: 0 26px;
@@ -93,11 +93,6 @@
 
 .history-head-actions {
   text-align: right;
-}
-
-.history-abnormal.has-abnormal {
-  color: var(--red);
-  font-weight: 500;
 }
 
 .history-actions {

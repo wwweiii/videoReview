@@ -104,8 +104,12 @@ export function TaskHistoryPage({
               <span>
                 <StatusBadge status={task.status} />
               </span>
-              <span className={`history-abnormal ${task.abnormalCount > 0 ? 'has-abnormal' : ''}`}>
-                {task.abnormalCount}
+              <span className="history-abnormal">
+                {task.abnormalCount > 0 ? (
+                  <span className="badge badge-danger">{task.abnormalCount}</span>
+                ) : (
+                  task.abnormalCount
+                )}
               </span>
               <span className="history-actions">
                 <button

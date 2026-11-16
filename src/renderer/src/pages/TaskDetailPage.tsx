@@ -244,26 +244,6 @@ export function TaskDetailPage({
         </div>
       ) : null}
 
-      <div className="summary-line">
-        <span>
-          共 <strong>{stats.total}</strong> {behavior ? '个片段' : '帧'}
-        </span>
-        {!behavior && (task.config.localize || stats.located > 0) ? (
-          <span>
-            已定位 <strong>{stats.located}</strong> 帧
-          </span>
-        ) : null}
-        <span className={stats.abnormal > 0 ? 'summary-abnormal' : ''}>
-          异常 <strong>{stats.abnormal}</strong>
-        </span>
-        <span>
-          待复核 <strong>{stats.review}</strong>
-        </span>
-        <span>
-          失败 <strong>{stats.failed}</strong>
-        </span>
-      </div>
-
       {behavior ? <BehaviorResults key={task.id} task={task} onRefresh={onRefresh} developerMode={developerMode} /> : <FrameTable
         task={task}
         stats={stats}

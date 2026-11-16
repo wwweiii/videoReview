@@ -15,7 +15,7 @@
 
   .history-head,
   .history-row {
-    grid-template-columns: minmax(0, 1fr) 150px 104px 58px 122px;
+    grid-template-columns: minmax(0, 1fr) 150px 104px 58px 56px;
     gap: 14px;
     padding: 0 20px;
   }
@@ -65,7 +65,7 @@
 
   .history-head,
   .history-row {
-    grid-template-columns: minmax(0, 1fr) 110px 58px 122px;
+    grid-template-columns: minmax(0, 1fr) 110px 58px 56px;
   }
 
   .history-head > span:nth-child(2),

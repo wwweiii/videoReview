@@ -94,28 +94,6 @@
   margin-top: 1px;
 }
 
-.summary-line {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 30px;
-  margin-bottom: 20px;
-  color: var(--text-2);
-  font-size: 15px;
-}
-
-.summary-line strong {
-  margin-left: 4px;
-  color: var(--text);
-  font-size: 20px;
-  font-weight: 600;
-}
-
-.summary-line .summary-abnormal,
-.summary-line .summary-abnormal strong {
-  color: var(--red);
-}
-
 .result-card {
   border: 1px solid var(--line);
   border-radius: var(--radius);
