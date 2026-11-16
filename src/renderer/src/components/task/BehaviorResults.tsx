@@ -176,7 +176,7 @@ function BehaviorPreview({ task, window: segment, developerMode, onClose, onPrev
             <span>{behaviorTime(item.timestampMs)}</span>
           </button>)}</div>
         <div className="drawer-badges"><VerdictBadge verdict={segment.verdict} />
-          <span className="drawer-confidence">模型置信度 {segment.confidence === null ? '—' : `${Math.round(segment.confidence * 100)}%`}</span>
+          <span className="drawer-confidence">{segment.confidence === null ? '—' : `${Math.round(segment.confidence * 100)}%`}</span>
         </div>
         {segment.categories.length > 0 ? <div className="category-chips drawer-categories">{segment.categories.map((category) => <span key={category} className="category-chip">{category}</span>)}</div> : null}
         <section className="drawer-section"><h3>行为说明</h3><p>{segment.description || (segment.verdict === 'normal' ? '未发现设置中的指定行为。' : '暂无说明')}</p></section>
