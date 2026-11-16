@@ -3,7 +3,7 @@
   max-width: 1060px;
 }
 
-/* 设置页顶部：标题右侧放横向二级菜单，保存按钮留在最右 */
+/* 设置页顶部：标题右侧放横向二级菜单 */
 .settings-heading {
   display: flex;
   align-items: center;

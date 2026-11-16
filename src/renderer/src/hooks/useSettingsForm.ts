@@ -21,9 +21,9 @@ function normalizeMaxTokens(value: number): number {
 
 /**
  * 设置页表单状态与纯动作：模型/分析/检测物品/行为采样字段、自定义物品增删勾选、
- * 保存/测试/探测共用的请求体组装。
+ * 自动保存/测试/探测共用的请求体组装。
  *
- * 网络请求（保存/测试/探测）留在 SettingsPage，便于容器统一管理加载与结果状态。
+ * 网络请求（自动保存/测试/探测）留在 SettingsPage，便于容器统一管理加载与结果状态。
  */
 export function useSettingsForm({
   settings,
@@ -69,7 +69,15 @@ export function useSettingsForm({
   const [behaviorStrideSec, setBehaviorStrideSec] = useState(settings.behaviorStrideSec)
   const [behaviorFps, setBehaviorFps] = useState(settings.behaviorFps)
 
-  const customValid = Boolean(baseUrl.trim() && modelName.trim())
+  const customValid = (() => {
+    if (!baseUrl.trim() || !modelName.trim()) return false
+    try {
+      const url = new URL(baseUrl.trim())
+      return url.protocol === 'http:' || url.protocol === 'https:'
+    } catch {
+      return false
+    }
+  })()
   const selectedCustomIds = customItems
     .filter((item) => items.includes(item.id))
     .map((item) => item.id)

@@ -205,7 +205,7 @@ export default function App(): React.JSX.Element {
     if (target === 'tasks' || target === 'behavior-tasks') void refreshTasks()
   }
 
-  /** 设置页二级菜单切换：只替换子页标识，不卸载设置页，未保存表单内容保留。 */
+  /** 设置页二级菜单切换：只替换子页标识，不卸载设置页，表单内容保留。 */
   function changeSettingsSection(section: SettingsSection): void {
     setView({ name: 'settings', section })
   }

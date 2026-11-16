@@ -1,5 +1,4 @@
-import { Loader2 } from 'lucide-react'
-import { useState, type JSX } from 'react'
+import { useEffect, useRef, useState, type JSX } from 'react'
 import type { ConnectionTestResult, PublicSettings } from '@shared/types'
 import { BehaviorSettingsSection } from '../components/settings/BehaviorSettingsSection'
 import { ItemSettingsSection } from '../components/settings/ItemSettingsSection'
@@ -9,10 +8,10 @@ import { useSettingsForm } from '../hooks/useSettingsForm'
 import { friendlyError, type ShowToast } from '../lib/ui'
 
 /**
- * 设置页容器：持有表单状态（useSettingsForm）与保存/测试两类网络动作。
+ * 设置页容器：持有表单状态（useSettingsForm）与自动保存/测试两类网络动作。
  *
  * 页面结构为「顶部标题 + 横向二级菜单 + 子页卡片」：子页由 App 通过 section 控制，
- * 三张卡片共用同一个 useSettingsForm，因此切页不会丢失未保存的表单内容。
+ * 三张卡片共用同一个 useSettingsForm，因此切页不会丢失表单内容。
  */
 export function SettingsPage({
   settings,
@@ -29,27 +28,68 @@ export function SettingsPage({
 }): JSX.Element {
   const form = useSettingsForm({ settings, showToast })
 
-  const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null)
+  const formRef = useRef(form)
+  const onSavedRef = useRef(onSaved)
+  const showToastRef = useRef(showToast)
+  const initialPayloadKeyRef = useRef<string | null>(null)
+  const saveVersionRef = useRef(0)
+  const skipPayloadKeyRef = useRef<string | null>(null)
 
-  const canSave = (form.modelMode === 'preset' || form.customValid) && !saving
+  formRef.current = form
+  onSavedRef.current = onSaved
+  showToastRef.current = showToast
 
-  async function save(): Promise<void> {
-    if (!form.validateExtraBody()) return
-    setSaving(true)
-    try {
-      const saved = await window.framelens.saveSettings(form.buildSavePayload())
-      onSaved(saved)
-      form.setApiKey('')
-      setTestResult(null)
-      showToast('success', '已保存')
-    } catch (error) {
-      showToast('error', friendlyError(error))
-    } finally {
-      setSaving(false)
+  const payloadKey = JSON.stringify(form.buildSavePayload())
+
+  useEffect(() => {
+    if (initialPayloadKeyRef.current === null) {
+      initialPayloadKeyRef.current = payloadKey
+      return
     }
-  }
+
+    if (skipPayloadKeyRef.current === payloadKey) {
+      skipPayloadKeyRef.current = null
+      initialPayloadKeyRef.current = payloadKey
+      return
+    }
+
+    if (payloadKey === initialPayloadKeyRef.current) return
+    initialPayloadKeyRef.current = payloadKey
+    const changeId = ++saveVersionRef.current
+
+    const timer = window.setTimeout(() => {
+      const currentForm = formRef.current
+      if (currentForm.modelMode === 'custom' && !currentForm.customValid) {
+        return
+      }
+      if (!currentForm.validateExtraBody()) {
+        return
+      }
+
+      void window.framelens
+        .saveSettings(currentForm.buildSavePayload())
+        .then((saved) => {
+          if (changeId !== saveVersionRef.current) return
+          onSavedRef.current(saved)
+          if (formRef.current.apiKey) {
+            const payloadWithoutApiKey = formRef.current.buildSavePayload()
+            payloadWithoutApiKey.customModel.apiKey = undefined
+            skipPayloadKeyRef.current = JSON.stringify(payloadWithoutApiKey)
+            formRef.current.setApiKey('')
+          }
+          setTestResult(null)
+        })
+        .catch((error) => {
+          if (changeId === saveVersionRef.current) {
+            showToastRef.current('error', friendlyError(error))
+          }
+        })
+    }, 300)
+
+    return () => window.clearTimeout(timer)
+  }, [payloadKey])
 
   async function testConnection(): Promise<void> {
     setTesting(true)
@@ -75,15 +115,6 @@ export function SettingsPage({
           <h1 className="page-title">设置</h1>
           <SettingsNav section={section} onChange={onSectionChange} />
         </div>
-        <button
-          type="button"
-          className="button button-primary"
-          onClick={() => void save()}
-          disabled={!canSave}
-        >
-          {saving ? <Loader2 size={17} className="spin" /> : null}
-          保存
-        </button>
       </header>
 
       <div className="settings-content">
