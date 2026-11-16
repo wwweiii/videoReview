@@ -8,7 +8,7 @@ import { FrameRow } from './FrameRow'
 
 export type FrameFilterKey = 'all' | 'abnormal' | 'review' | 'normal' | 'failed'
 
-const PAGE_SIZE = 20
+const PAGE_SIZE = 10
 
 /**
  * 结果卡片：筛选标签 / 搜索 / 刷新 / 帧行 / 分页。

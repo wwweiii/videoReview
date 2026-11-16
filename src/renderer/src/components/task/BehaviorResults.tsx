@@ -7,7 +7,7 @@ import { frameImageUrl } from '../../lib/ui'
 import { VerdictBadge } from '../common/StatusBadge'
 import { CallTraceDrawer } from './CallTraceDrawer'
 
-const PAGE_SIZE = 20
+const PAGE_SIZE = 10
 
 export function BehaviorResults({ task, onRefresh, developerMode }: {
   task: TaskRecord
@@ -77,7 +77,7 @@ export function BehaviorResults({ task, onRefresh, developerMode }: {
             </span>
             <span className="frame-confidence">{window.confidence === null ? '—' : `${Math.round(window.confidence * 100)}%`}</span>
           </button>)}
-        <div className="pagination"><span>第 {currentPage} / {pages} 页 · 共 {filtered.length} 个片段</span>
+        <div className="pagination"><span>第 {currentPage} / {pages} 页</span>
           <div className="pagination-actions">
             <button type="button" className="icon-button" aria-label="上一页" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}><ChevronLeft size={18} /></button>
             <button type="button" className="icon-button" aria-label="下一页" disabled={currentPage >= pages} onClick={() => setPage(currentPage + 1)}><ChevronRight size={18} /></button>
