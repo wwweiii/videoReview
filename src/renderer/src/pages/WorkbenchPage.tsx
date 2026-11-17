@@ -3,6 +3,7 @@ import { useRef, useState, type DragEvent, type JSX } from 'react'
 import { isTaskActive } from '@shared/task'
 import type { TaskKind, TaskSummary } from '@shared/types'
 import { friendlyError, type ShowToast } from '../lib/ui'
+import { flushPendingSettings } from '../lib/settings-autosave'
 
 export interface UploadedFile {
   path: string
@@ -99,6 +100,7 @@ export function WorkbenchPage({
     if (starting.has(key)) return
     setStarting((previous) => new Set(previous).add(key))
     try {
+      await flushPendingSettings()
       const task = await (kind === 'behavior'
         ? window.framelens.startBehaviorReview(file.path)
         : window.framelens.startReview(file.path))

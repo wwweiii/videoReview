@@ -29,6 +29,8 @@ export interface ParsedGrounding {
   dialect: ParseDialect
   /** 明确表达了"没有目标"（且有否定词、无任何坐标） */
   noTarget: boolean
+  /** 可解析的框、合法空列表或明确无目标；无关文本/损坏 JSON 不算成功。 */
+  valid: boolean
 }
 
 const MIN_AREA = 0.0002
@@ -615,6 +617,20 @@ export function isRefusal(text: string): boolean {
 
 const SPECIAL_TOKEN_HINT = /<box[\s>]|<\|box_start\|>|<\|begin_of_box\|>|<ref>/i
 
+function isEmptyGrounding(text: string): boolean {
+  try {
+    const value: unknown = JSON.parse(text)
+    if (Array.isArray(value)) return value.length === 0
+    if (!value || typeof value !== 'object') return false
+    const record = value as Record<string, unknown>
+    const keys = ['objects', 'detections', 'results', 'boxes', 'bboxes', 'regions']
+    const lists = keys.filter((key) => key in record).map((key) => record[key])
+    return lists.length > 0 && lists.every((list) => Array.isArray(list) && list.length === 0)
+  } catch {
+    return false
+  }
+}
+
 export function parseGrounding(
   raw: string,
   preferredDialects: ParseDialect[] = DEFAULT_PARSE_ORDER,
@@ -634,9 +650,10 @@ export function parseGrounding(
         : boxes.some((item) => quadLooksSane(item.coords))
       if (!usable) continue
       return {
-        boxes: boxes.slice(0, 20),
+        boxes,
         dialect,
-        noTarget: false
+        noTarget: false,
+        valid: true
       }
     } catch {
       // 继续下一个方言
@@ -653,13 +670,14 @@ export function parseGrounding(
           ? boxes.some((item) => resolveBox(item, probeContext) !== null)
           : boxes.some((item) => quadLooksSane(item.coords))
         if (!usable) continue
-        return { boxes: boxes.slice(0, 20), dialect, noTarget: false }
+        return { boxes, dialect, noTarget: false, valid: true }
       } catch {
         // 忽略
       }
     }
   }
-  return { boxes: [], dialect: 'none', noTarget: isRefusal(text) }
+  const noTarget = isRefusal(text)
+  return { boxes: [], dialect: 'none', noTarget, valid: noTarget || isEmptyGrounding(text) }
 }
 
 function quadLooksSane(coords: [number, number, number, number]): boolean {

@@ -61,7 +61,7 @@ export function labelMatchesItem(raw: string, item: ProhibitedItem): boolean {
   const candidates = [item.label, ...(item.aliases ?? [])]
   return candidates.some((candidate) => {
     const text = normalizeLabelText(candidate)
-    return Boolean(text) && (normalized === text || normalized.includes(text) || text.includes(normalized))
+    return Boolean(text) && normalized === text
   })
 }
 

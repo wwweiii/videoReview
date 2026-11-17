@@ -5,10 +5,14 @@
 import { app } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
+import crypto from 'node:crypto'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { getDataDir } from '../../src/main/paths'
+import { configureElectronDataPath, getDataDir } from '../../src/main/paths'
+import { verifySettingsUi } from './settings-ui'
+import { extractFrames } from '../../src/main/media/ffmpeg'
 import {
   getTask,
+  deleteTask,
   initializeTaskManager,
   listTasks,
   relocalizeTask,
@@ -17,6 +21,10 @@ import {
 
 const root = process.cwd()
 const results: Array<{ name: string; ok: boolean; detail: string }> = []
+
+configureElectronDataPath()
+// 隐藏窗口销毁后仍需等待任务及汇总，不让 Electron 默认退出造成假阳性。
+app.on('window-all-closed', () => {})
 
 function check(name: string, ok: boolean, detail: unknown = ''): void {
   results.push({ name, ok, detail: typeof detail === 'string' ? detail : JSON.stringify(detail) })
@@ -184,6 +192,26 @@ async function main(): Promise<void> {
       (frame) => frame.regionStatus === 'ok' && frame.regions.length > 0
     )
     check('重定位后仍有框', afterLocated.length >= 1, afterLocated.length)
+
+    const uiTaskId = await verifySettingsUi(videoPath, check)
+    const uiStatus = await waitTerminal(uiTaskId)
+    check('界面启动的任务完成并落盘', uiStatus === 'completed', uiStatus)
+
+    const cancelledId = crypto.randomUUID()
+    const controller = new AbortController()
+    let cancelled = false
+    try {
+      await extractFrames({
+        taskId: cancelledId, filePath: videoPath, durationMs: 6000, intervalSec: 0.1,
+        signal: controller.signal, onProgress: () => controller.abort()
+      })
+    } catch (error) {
+      cancelled = error instanceof Error && error.message === '任务已取消'
+    }
+    check('真实 FFmpeg 抽帧响应取消', cancelled && controller.signal.aborted)
+    await deleteTask(cancelledId)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    check('取消返回后删除目录不再被抽帧进程重建', !fs.existsSync(path.join(getDataDir(), 'tasks', cancelledId)))
   } finally {
     mock.kill()
     try {

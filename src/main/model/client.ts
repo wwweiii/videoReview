@@ -62,6 +62,7 @@ export async function requestChat(
     requireComplete?: boolean
   } = {}
 ): Promise<{ content: string; latencyMs: number; traces: ModelCallTrace[] }> {
+  if (options.signal?.aborted) throw new Error('分析已取消')
   const endpoint = resolveEndpoint(config.baseUrl)
   const headers: Record<string, string> = {
     'Content-Type': 'application/json'
@@ -88,6 +89,7 @@ export async function requestChat(
   const maxAttempts = Math.max(1, Math.min(3, options.maxAttempts ?? 3))
 
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    if (options.signal?.aborted) throw new Error('分析已取消')
     const traceStartedAt = new Date().toISOString()
     let traceStatus: number | null = null
     let traceResponse = ''
@@ -109,16 +111,18 @@ export async function requestChat(
     }
     const timeoutController = new AbortController()
     const timer = setTimeout(() => timeoutController.abort(), timeoutSec * 1000)
-    const onAbort = (): void => timeoutController.abort()
-    options.signal?.addEventListener('abort', onAbort, { once: true })
+    const signal = options.signal
+      ? AbortSignal.any([options.signal, timeoutController.signal])
+      : timeoutController.signal
     try {
       const response = await fetch(endpoint, {
         method: 'POST',
         headers,
         body,
-        signal: timeoutController.signal
+        signal
       })
       const text = await response.text()
+      if (options.signal?.aborted) throw new Error('分析已取消')
       traceStatus = response.status
       traceResponse = text
       const latencyMs = Date.now() - started
@@ -130,15 +134,6 @@ export async function requestChat(
         }
         const error = new Error('模型请求失败，请稍后重试') as Error & { status?: number }
         error.status = response.status
-        if (response.status === 429 || response.status >= 500) {
-          lastError = error
-          if (attempt < maxAttempts - 1) {
-            traceError = error.message
-            recordTrace()
-            await sleep(800 * (attempt + 1), options.signal)
-            continue
-          }
-        }
         throw error
       }
 
@@ -175,6 +170,7 @@ export async function requestChat(
         ((error as { status?: number }).status ?? 0) >= 500
       if (attempt < maxAttempts - 1 && retryable) {
         recordTrace()
+        clearTimeout(timer)
         await sleep(800 * (attempt + 1), options.signal)
         continue
       }
@@ -182,7 +178,6 @@ export async function requestChat(
       throw lastError
     } finally {
       clearTimeout(timer)
-      options.signal?.removeEventListener('abort', onAbort)
     }
   }
 
@@ -217,15 +212,16 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
       reject(new Error('分析已取消'))
       return
     }
-    const timer = setTimeout(resolve, ms)
-    signal?.addEventListener(
-      'abort',
-      () => {
-        clearTimeout(timer)
-        reject(new Error('分析已取消'))
-      },
-      { once: true }
-    )
+    const onAbort = (): void => {
+      clearTimeout(timer)
+      signal?.removeEventListener('abort', onAbort)
+      reject(new Error('分析已取消'))
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    signal?.addEventListener('abort', onAbort, { once: true })
   })
 }
 

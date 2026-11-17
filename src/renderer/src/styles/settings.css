@@ -375,3 +375,15 @@ input:focus {
   background: var(--dark);
 }
 
+.settings-save-state {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.settings-save-state[data-status='error'] {
+  color: #b42318;
+}
+

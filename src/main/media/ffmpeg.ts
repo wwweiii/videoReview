@@ -96,10 +96,8 @@ export async function probeVideo(
     }, 30_000)
     const onAbort = (): void => {
       if (settled) return
-      settled = true
       clearTimeout(timer)
       killProcess(child)
-      reject(new Error('操作已取消'))
     }
     signal?.addEventListener('abort', onAbort, { once: true })
 
@@ -118,7 +116,7 @@ export async function probeVideo(
       settled = true
       clearTimeout(timer)
       signal?.removeEventListener('abort', onAbort)
-      finish(() => resolve(output))
+      finish(() => signal?.aborted ? reject(new Error('操作已取消')) : resolve(output))
     })
   })
 
@@ -217,13 +215,12 @@ export async function extractFrames(options: {
 
     const onAbort = (): void => {
       if (settled) return
-      settled = true
       killProcess(child)
-      reject(new Error('任务已取消'))
     }
     signal?.addEventListener('abort', onAbort, { once: true })
 
     child.stdout.on('data', (chunk: Buffer) => {
+      if (signal?.aborted) return
       stdoutBuffer += chunk.toString('utf8')
       const lines = stdoutBuffer.split(/\r?\n/)
       stdoutBuffer = lines.pop() ?? ''
@@ -274,7 +271,8 @@ export async function extractFrames(options: {
       if (settled) return
       settled = true
       signal?.removeEventListener('abort', onAbort)
-      if (code === 0) resolve()
+      if (signal?.aborted) reject(new Error('任务已取消'))
+      else if (code === 0) resolve()
       else {
         const detail = lastUsefulError(stderrTail.join('\n'))
         reject(new Error(detail ? `视频处理失败：${detail}` : '视频处理失败'))

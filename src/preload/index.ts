@@ -40,6 +40,12 @@ const api: FramelensApi = {
   probeModel: (input: TestModelInput): Promise<ModelProbeResult> =>
     ipcRenderer.invoke('model:probe', input),
   getPathForFile: (file: File): string => webUtils.getPathForFile(file),
+  onBeforeClose: (callback: () => void): (() => void) => {
+    const listener = (): void => callback()
+    ipcRenderer.on('app:beforeClose', listener)
+    return () => ipcRenderer.removeListener('app:beforeClose', listener)
+  },
+  completeClose: (saved: boolean): void => ipcRenderer.send('app:closeReady', saved),
   onTaskEvent: (callback: (event: TaskEvent) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, taskEvent: TaskEvent): void => {
       callback(taskEvent)

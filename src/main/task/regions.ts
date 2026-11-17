@@ -37,7 +37,7 @@ export interface RegionCounts {
 export interface RegionRunner {
   enqueue(frame: FrameRecord): void
   finish(): Promise<void>
-  abort(): void
+  abort(): Promise<void>
   counts(): RegionCounts
 }
 
@@ -51,9 +51,11 @@ function delay(ms: number): Promise<void> {
 export function createRegionRunner(
   task: TaskRecord,
   modelConfig: ResolvedModelConfig,
-  signal: AbortSignal,
+  parentSignal: AbortSignal,
   onlyLocalize: boolean
 ): RegionRunner {
+  const controller = new AbortController()
+  const signal = AbortSignal.any([parentSignal, controller.signal])
   const concurrency = Math.max(1, Math.min(modelConfig.concurrency, 3))
   const queue: FrameRecord[] = []
   let planned = 0
@@ -124,6 +126,7 @@ export function createRegionRunner(
 
   async function locate(frame: FrameRecord): Promise<void> {
     await ensureProfileStarted()
+    if (signal.aborted) throw new Error('定位已取消')
     if (!profile) {
       stopped = true
       failRest(profileError || '当前模型不支持位置输出', 'unsupported')
@@ -147,6 +150,7 @@ export function createRegionRunner(
         },
         signal
       )
+      if (signal.aborted) throw new Error('定位已取消')
       frame.regions = result.regions
       frame.regionStatus = 'ok'
       frame.regionLevel = result.regions.length > 0 ? 'L3' : 'L0'
@@ -198,6 +202,7 @@ export function createRegionRunner(
 
   async function worker(): Promise<void> {
     while (!signal.aborted && !stopped) {
+      if (task.saveError) throw new Error(task.saveError)
       const frame = queue.shift()
       if (!frame) {
         if (producerDone) return
@@ -209,7 +214,9 @@ export function createRegionRunner(
   }
 
   const workersPromise = (async () => {
-    await Promise.all(Array.from({ length: concurrency }, () => worker()))
+    const results = await Promise.allSettled(Array.from({ length: concurrency }, () => worker()))
+    const rejected = results.find((result) => result.status === 'rejected')
+    if (rejected?.status === 'rejected') throw rejected.reason
   })()
   workersPromise.catch(() => undefined)
 
@@ -232,6 +239,7 @@ export function createRegionRunner(
     finish: async () => {
       producerDone = true
       await workersPromise
+      if (signal.aborted) throw new Error('定位已取消')
       const locatedCount = located
       logger.info('定位阶段完成', {
         taskId: task.id,
@@ -242,9 +250,14 @@ export function createRegionRunner(
       })
       emitSummary(task, true)
     },
-    abort: () => {
+    abort: async () => {
       stopped = true
-      queue.length = 0
+      controller.abort()
+      await Promise.allSettled([workersPromise, profilePromise ?? Promise.resolve()])
+      failRest('定位已中止', 'failed')
+      for (const frame of task.frames) {
+        if (frame.regionStatus === 'pending') markFrame(frame, 'failed', '定位已中止')
+      }
     },
     counts: () => ({ planned, located })
   }
@@ -270,7 +283,12 @@ export async function localizeFrames(
 
   const runner = createRegionRunner(task, modelConfig, signal, options.onlyLocalize)
   for (const frame of targets) runner.enqueue(frame)
-  await runner.finish()
+  try {
+    await runner.finish()
+  } catch (error) {
+    await runner.abort()
+    throw error
+  }
   if (signal.aborted) throw new Error('任务已取消')
   task.phaseMessage = '正在分析'
 }

@@ -1,0 +1,394 @@
+import assert from 'node:assert/strict'
+import crypto from 'node:crypto'
+import fs from 'node:fs'
+import path from 'node:path'
+import { getEventListeners } from 'node:events'
+import { setTimeout as delay } from 'node:timers/promises'
+import { deriveVerdict, extractJsonValue, parseAnalysisObject, parseFrameGroup } from '../../src/main/model/analysis'
+import { parseBehaviorAnalysis } from '../../src/main/model/behavior'
+import { requestChat } from '../../src/main/model/client'
+import { parseGrounding } from '../../src/shared/localization/dialects'
+import { matchItem, normalizeCustomItems } from '../../src/shared/items'
+import { getPublicSettings, saveSettings } from '../../src/main/config/settings'
+import { getResolvedModelConfig } from '../../src/main/config/model-config'
+import { saveProfile, computePromptFingerprint } from '../../src/main/config/profiles'
+import { profileId } from '../../src/shared/localization/profile'
+import { localizeFrame } from '../../src/main/localization/locator'
+import { newFrame, readTask, rememberTask, flushSave, scheduleSave, deleteStoredTask, flushAllTasks } from '../../src/main/task/store'
+import { finishTask, failTask } from '../../src/main/task/outcome'
+import { markUnresolvedFailed } from '../../src/main/task/analysis'
+import { createRegionRunner } from '../../src/main/task/regions'
+import { cancelActiveTask, getTask, initializeTaskManager, retryFailedFrames, shutdownTaskManager, startBehaviorReview, startReview } from '../../src/main/task/manager'
+import { taskSession } from '../../src/main/task/session'
+import { createSettingsAutosave, registerSettingsFlush, flushPendingSettings } from '../../src/renderer/src/lib/settings-autosave'
+
+const originalFetch = globalThis.fetch
+const tests = []
+const test = (name, run) => tests.push({ name, run })
+const normal = { abnormal: false, risk_level: 'none', categories: [], description: '', evidence: '', confidence: 0.9, need_human_review: false }
+const parsed = (input = {}) => parseAnalysisObject({ ...normal, ...input }, '{}', [], ['phone'])
+const verdict = (input) => deriveVerdict(parsed(input), 0.6).verdict
+const response = (content, finishReason = 'stop') => new Response(JSON.stringify({ choices: [{ message: { content: typeof content === 'string' ? content : JSON.stringify(content) }, finish_reason: finishReason }] }))
+const initial = {
+  modelMode: 'custom', customModel: { baseUrl: 'http://127.0.0.1:1/v1', model: 'test', extraBody: '' },
+  developerMode: false, intervalSec: 2, prohibitedItems: ['phone'], customProhibitedItems: [],
+  analysisMode: 'single', groupSize: 4, localize: false, behaviorItems: [{ id: 'behavior:run', label: '奔跑' }],
+  behaviorWindowSec: 2, behaviorStrideSec: 2, behaviorFps: 4
+}
+let config
+const taskFile = (task) => path.join(process.env.VIDEOREVIEW_DATA_DIR, 'tasks', task.id, 'task.json')
+function task(overrides = {}) {
+  const now = new Date().toISOString()
+  return {
+    id: crypto.randomUUID(), kind: 'items', name: 'test.mp4',
+    source: { filePath: '/test.mp4', fileName: 'test.mp4', durationMs: 2000, width: 640, height: 360, fileSizeBytes: 1 },
+    config: { ...initial, confidenceThreshold: 0.6 }, frames: [], status: 'analyzing',
+    createdAt: now, updatedAt: now, errorMessage: '', progress: 0, phaseMessage: '', regionProfile: null, ...overrides
+  }
+}
+function deferred() {
+  let resolve, reject
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no })
+  return { promise, resolve, reject }
+}
+async function until(check, timeout = 3000) {
+  const start = Date.now()
+  while (!check()) {
+    if (Date.now() - start > timeout) throw new Error('等待测试条件超时')
+    await delay(10)
+  }
+}
+function abortable(signal) {
+  return new Promise((_resolve, reject) => {
+    const abort = () => reject(new DOMException('aborted', 'AbortError'))
+    if (signal.aborted) abort()
+    else signal.addEventListener('abort', abort, { once: true })
+  })
+}
+
+test('高置信度正常结果可以通过，低置信度或缺失置信度转待复核', () => {
+  assert.equal(verdict({}), 'normal')
+  for (const confidence of [0.1, null, undefined, -1, 150, 'invalid']) assert.equal(verdict({ confidence }), 'review')
+  assert.equal(verdict({ confidence: '90%' }), 'normal')
+})
+test('复核字段缺失或类别与判定矛盾时不自动通过', () => {
+  assert.equal(verdict({ need_human_review: undefined }), 'review')
+  assert.equal(verdict({ categories: ['手机'] }), 'review')
+  assert.equal(verdict({ categories: undefined }), 'review')
+  assert.equal(verdict({ abnormal: true, categories: ['手机'] }), 'review')
+  assert.equal(verdict({ abnormal: true, categories: ['手机'], evidence: '桌面可见手机' }), 'abnormal')
+  assert.equal(verdict({ abnormal: true, categories: ['杯子'], evidence: '可见杯子' }), 'review')
+})
+test('非布尔判定和损坏置信度不会误转成有效结果', () => {
+  assert.throws(() => parsed({ abnormal: 2 }))
+  assert.equal(verdict({ confidence: '90oops' }), 'review')
+  assert.equal(verdict({ confidence: '150%' }), 'review')
+  assert.equal(verdict({ confidence: '0x10' }), 'review')
+})
+test('行为类别精确匹配，不将快速奔跑或未奔跑归入奔跑', () => {
+  assert.deepEqual(parseBehaviorAnalysis(JSON.stringify({ ...normal, abnormal: true, categories: ['快速奔跑'] }), ['奔跑', '快速奔跑']).categories, ['快速奔跑'])
+  assert.equal(parseBehaviorAnalysis(JSON.stringify({ ...normal, abnormal: true, categories: ['未奔跑'] }), ['奔跑']).needHumanReview, true)
+})
+test('物品按名称及显式别名匹配，自定义笔记本电脑不会被笔吞掉', () => {
+  assert.equal(matchItem('phone').itemId, 'phone')
+  assert.equal(matchItem('笔记本电脑').itemId, null)
+  assert.equal(normalizeCustomItems([{ label: '笔记本电脑' }]).length, 1)
+})
+test('分组解析兼容对象、顶层数组和带说明的数组', () => {
+  for (const raw of [JSON.stringify({ frames: [normal] }), JSON.stringify([normal]), `结果：${JSON.stringify([normal])}`]) {
+    assert.equal(parseFrameGroup(raw, 1).size, 1)
+  }
+})
+test('分组乱序按编号还原，重复编号对应帧失败', () => {
+  const values = [{ ...normal, frame_index: 1, description: 'second' }, { ...normal, frame_index: 0, description: 'first' }]
+  assert.equal(parseFrameGroup(JSON.stringify(values), 2).get(0).description, 'first')
+  assert.equal(parseFrameGroup(JSON.stringify([...values, values[0], values[0]]), 2).has(1), false)
+})
+test('外层 JSON 损坏时，不截取内部完整对象作为成功结果', () => {
+  assert.throws(() => extractJsonValue(`结果：[${JSON.stringify(normal)}`))
+  assert.throws(() => parseFrameGroup(`结果：{"frames":[${JSON.stringify(normal)}]`, 1))
+})
+test('缺失编号的部分结果不猜测映射，非法编号不被强制转型', () => {
+  assert.equal(parseFrameGroup(JSON.stringify([normal]), 2).size, 0)
+  assert.equal(parseFrameGroup(JSON.stringify([{ ...normal, frame_index: false }]), 1).size, 0)
+  assert.equal(parseFrameGroup(JSON.stringify([{ ...normal, frame_index: 1 }]), 2).has(0), false)
+})
+test('定位区分合法空结果与损坏响应，并保留超过20个框', () => {
+  assert.equal(parseGrounding('[]').valid, true)
+  assert.equal(parseGrounding('{"objects":[]}').valid, true)
+  assert.equal(parseGrounding('未发现目标').valid, true)
+  for (const raw of ['unrelated text', '{"objects":[}', '{}', '{"objects":[{"bbox":[0,0,0,0]}]}']) assert.equal(parseGrounding(raw).valid, false)
+  assert.equal(parseGrounding(JSON.stringify({ objects: Array.from({ length: 25 }, (_, i) => ({ label: 'phone', bbox: [10 + i, 20, 40 + i, 80] })) })).boxes.length, 25)
+})
+test('已取消的请求不发送 HTTP', async () => {
+  let calls = 0
+  globalThis.fetch = async () => { calls++; return response(normal) }
+  const controller = new AbortController(); controller.abort()
+  await assert.rejects(requestChat(config, [], { signal: controller.signal }), /取消/)
+  assert.equal(calls, 0)
+})
+test('请求中取消立即结束，响应后取消也不提交成功', async () => {
+  const controller = new AbortController()
+  globalThis.fetch = (_url, options) => abortable(options.signal)
+  const pending = requestChat(config, [], { signal: controller.signal })
+  controller.abort()
+  await assert.rejects(pending, /取消/)
+  const second = new AbortController()
+  globalThis.fetch = async () => { second.abort(); return response(normal) }
+  await assert.rejects(requestChat(config, [], { signal: second.signal }), /取消/)
+})
+test('重试结束不残留取消监听器，退避中取消不会再次请求', async () => {
+  let calls = 0
+  const controller = new AbortController()
+  globalThis.fetch = async () => ++calls === 1 ? new Response('busy', { status: 503 }) : response(normal)
+  await requestChat(config, [], { signal: controller.signal })
+  assert.equal(calls, 2)
+  assert.equal(getEventListeners(controller.signal, 'abort').length, 0)
+  calls = 0
+  const cancelled = new AbortController()
+  globalThis.fetch = async () => { calls++; setTimeout(() => cancelled.abort(), 10); return new Response('busy', { status: 429 }) }
+  await assert.rejects(requestChat(config, [], { signal: cancelled.signal }), /取消/)
+  assert.equal(calls, 1)
+  assert.equal(getEventListeners(cancelled.signal, 'abort').length, 0)
+})
+test('输出达到长度上限时不接受不完整判定', async () => {
+  globalThis.fetch = async () => response(normal, 'length')
+  await assert.rejects(requestChat(config, [], { requireComplete: true, maxAttempts: 1 }), /长度上限/)
+})
+test('连续更新仍在最长保存间隔内落盘', async () => {
+  const value = task(); rememberTask(value)
+  for (let i = 0; i < 23; i++) { value.progress = i; scheduleSave(value); await delay(100) }
+  assert.equal(fs.existsSync(taskFile(value)), true)
+  assert.ok(JSON.parse(fs.readFileSync(taskFile(value), 'utf8')).progress >= 15)
+  await flushSave(value)
+  assert.equal(JSON.parse(fs.readFileSync(taskFile(value), 'utf8')).progress, 22)
+})
+test('磁盘写入失败向上传播，恢复后清空错误且可继续保存', async () => {
+  const value = task(); rememberTask(value)
+  const original = fs.promises.writeFile
+  try {
+    fs.promises.writeFile = async () => { throw new Error('ENOSPC simulated') }
+    await assert.rejects(flushSave(value), /ENOSPC/)
+    assert.match(value.saveError, /保存结果失败/)
+  } finally { fs.promises.writeFile = original }
+  await flushSave(value)
+  assert.equal(value.saveError, '')
+})
+test('保存失败后不会发布已完成，定位中的帧会收敛到失败', async () => {
+  const frame = { ...newFrame(0, 0, 'test.png'), status: 'completed', verdict: 'abnormal', regionStatus: 'pending' }
+  const value = task({ frames: [frame] }); rememberTask(value)
+  const original = fs.promises.writeFile
+  try {
+    fs.promises.writeFile = async () => { throw new Error('ENOSPC simulated') }
+    await assert.rejects(finishTask(value))
+    assert.equal(value.status, 'analyzing')
+    await failTask(value, new Error('write failed'), false)
+    assert.equal(value.status, 'failed')
+    assert.equal(frame.regionStatus, 'failed')
+  } finally { fs.promises.writeFile = original }
+  await flushSave(value)
+})
+test('最终保存期间仍未发布完成，取消会覆盖落盘中的终态', async () => {
+  const value = task(); rememberTask(value)
+  const controller = new AbortController(), entered = deferred(), gate = deferred()
+  const original = fs.promises.writeFile
+  try {
+    fs.promises.writeFile = async (...args) => { entered.resolve(); await gate.promise; return original(...args) }
+    const finishing = finishTask(value, controller.signal)
+    await entered.promise
+    assert.equal(value.status, 'analyzing')
+    controller.abort(); gate.resolve()
+    await assert.rejects(finishing, /取消/)
+    await failTask(value, new Error('任务已取消'), true)
+    assert.equal(JSON.parse(fs.readFileSync(taskFile(value), 'utf8')).status, 'cancelled')
+  } finally { gate.resolve(); fs.promises.writeFile = original }
+})
+test('删除等待已排队的保存完成，不会删除后重建任务目录', async () => {
+  const value = task(); rememberTask(value)
+  const original = fs.promises.writeFile
+  const entered = deferred(), gate = deferred()
+  try {
+    fs.promises.writeFile = async (...args) => { entered.resolve(); await gate.promise; return original(...args) }
+    const save = flushSave(value)
+    await entered.promise
+    const deleting = deleteStoredTask(value.id)
+    gate.resolve()
+    await Promise.all([save, deleting])
+    assert.equal(fs.existsSync(path.dirname(taskFile(value))), false)
+  } finally { gate.resolve(); fs.promises.writeFile = original }
+})
+test('中断恢复同时处理判定和定位状态', () => {
+  const frames = [newFrame(0, 0, 'a.png'), { ...newFrame(1, 1, 'b.png'), status: 'completed', regionStatus: 'pending' }]
+  markUnresolvedFailed(task({ frames }), '任务已中断')
+  assert.equal(frames[0].status, 'failed')
+  assert.equal(frames[1].status, 'completed')
+  assert.equal(frames[1].regionStatus, 'failed')
+})
+test('启动扫描修复磁盘上的中断任务', () => {
+  const value = task({ frames: [{ ...newFrame(0, 0, 'a.png'), status: 'completed', regionStatus: 'pending' }] })
+  fs.mkdirSync(path.dirname(taskFile(value)), { recursive: true })
+  fs.writeFileSync(taskFile(value), JSON.stringify(value), 'utf8')
+  initializeTaskManager()
+  assert.equal(getTask(value.id).status, 'interrupted')
+  assert.equal(getTask(value.id).frames[0].regionStatus, 'failed')
+})
+test('设置写入失败不污染内存中的已保存设置', () => {
+  const before = getPublicSettings().intervalSec
+  const rename = fs.renameSync
+  try {
+    fs.renameSync = () => { throw new Error('EACCES simulated') }
+    assert.throws(() => saveSettings({ ...initial, section: 'items', intervalSec: 7 }), /EACCES/)
+    assert.equal(getPublicSettings().intervalSec, before)
+  } finally { fs.renameSync = rename }
+})
+test('旧行为任务补齐结果字段，并能恢复未结束片段', () => {
+  const window = { index: 0, timestampMs: 0, fileName: 'a.jpg', status: 'analyzing', endTimestampMs: 2000, samples: [] }
+  const value = task({ kind: 'behavior', behaviorWindows: [window] })
+  fs.mkdirSync(path.dirname(taskFile(value)), { recursive: true })
+  fs.writeFileSync(taskFile(value), JSON.stringify(value), 'utf8')
+  const loaded = readTask(value.id)
+  assert.deepEqual(loaded.behaviorWindows[0].callTraces, [])
+  markUnresolvedFailed(loaded, '任务已中断')
+  assert.equal(loaded.behaviorWindows[0].status, 'failed')
+})
+test('模型草稿不合法时，仍可独立保存行为和物品设置', () => {
+  const invalid = { ...initial, customModel: { baseUrl: '', model: '', extraBody: '{' } }
+  saveSettings({ ...invalid, section: 'behavior', behaviorFps: 6 })
+  saveSettings({ ...invalid, section: 'items', intervalSec: 3 })
+  assert.equal(getPublicSettings().behaviorFps, 6)
+  assert.equal(getPublicSettings().intervalSec, 3)
+  assert.throws(() => saveSettings({ ...invalid, section: 'model' }))
+})
+test('自动保存串行写入并追赶保存期间的新编辑', async () => {
+  const gate = deferred(), entered = deferred(), calls = [], states = []
+  const saver = createSettingsAutosave({ initial, onSaved() {}, onState: (state) => states.push(state), save: async (input) => {
+    calls.push(input.intervalSec)
+    if (calls.length === 1) { entered.resolve(); await gate.promise }
+    return getPublicSettings()
+  } })
+  try {
+    saver.update({ ...initial, intervalSec: 3 })
+    const saving = saver.flush(); await entered.promise
+    saver.update({ ...initial, intervalSec: 4 }); gate.resolve(); await saving
+    assert.deepEqual(calls, [3, 4])
+    assert.equal(states.at(-1).status, 'saved')
+  } finally { gate.resolve(); saver.dispose() }
+})
+test('自动保存失败保留待保存值，同一值可以重试', async () => {
+  let fail = true, calls = 0
+  const saver = createSettingsAutosave({ initial, onSaved() {}, onState() {}, save: async () => {
+    calls++; if (fail) throw new Error('disk failure'); return getPublicSettings()
+  } })
+  try {
+    saver.update({ ...initial, intervalSec: 5 }); await assert.rejects(saver.flush(), /disk failure/)
+    fail = false; await saver.flush(); assert.equal(calls, 2)
+  } finally { saver.dispose() }
+})
+test('一个设置分区失败，不阻止其他分区提交', async () => {
+  const saved = []
+  const saver = createSettingsAutosave({ initial, onSaved() {}, onState() {}, save: async (input) => {
+    if (input.section === 'model') throw new Error('invalid model')
+    saved.push(input.section); return getPublicSettings()
+  } })
+  try {
+    saver.update({ ...initial, intervalSec: 3, behaviorFps: 8, customModel: { ...initial.customModel, model: '' } })
+    await assert.rejects(saver.flush(), /invalid model/)
+    assert.deepEqual(saved, ['items', 'behavior'])
+  } finally { saver.dispose() }
+})
+test('任务启动和窗口关闭的共享 flush 会提交尚在防抖期的修改', async () => {
+  let saved = 0
+  const saver = createSettingsAutosave({ initial, onSaved() {}, onState() {}, save: async (input) => { saved = input.intervalSec; return getPublicSettings() } })
+  const unregister = registerSettingsFlush(saver.flush)
+  try {
+    saver.update({ ...initial, intervalSec: 6 })
+    await flushPendingSettings(); assert.equal(saved, 6)
+  } finally { unregister(); saver.dispose() }
+})
+test('抽帧阶段取消会等待收尾，零帧任务可以重新抽帧', async () => {
+  const entered = deferred()
+  globalThis.extractionHook = async (options) => { entered.resolve(); await abortable(options.signal) }
+  globalThis.fetch = async () => response(normal)
+  try {
+    const summary = await startReview('/test.mp4'); await entered.promise
+    assert.equal(await cancelActiveTask(summary.id), true)
+    assert.equal(taskSession.activeRuns.has(summary.id), false)
+    assert.equal(getTask(summary.id).status, 'cancelled')
+    globalThis.extractionHook = undefined
+    retryFailedFrames(summary.id)
+    await until(() => !taskSession.activeRuns.has(summary.id))
+    assert.equal(getTask(summary.id).status, 'completed')
+  } finally { globalThis.extractionHook = undefined }
+})
+test('判定阶段取消保留终态，未完成帧不再保持 pending', async () => {
+  const entered = deferred()
+  globalThis.fetch = async (_url, options) => { entered.resolve(); return abortable(options.signal) }
+  const summary = await startReview('/test.mp4'); await entered.promise
+  await cancelActiveTask(summary.id)
+  assert.equal(getTask(summary.id).status, 'cancelled')
+  assert.equal(getTask(summary.id).frames[0].status, 'failed')
+})
+test('定位停止等待在途请求，不会在终态后回写结果', async () => {
+  const fingerprint = computePromptFingerprint(config)
+  const profile = { id: profileId(config.baseUrl, config.model, fingerprint), baseUrl: config.baseUrl, model: config.model,
+    promptFingerprint: fingerprint, localizationOk: true, coordinateSpace: 'normalized_1000', boxOrder: 'xyxy',
+    parseDialects: ['json_multi'], scaleX: 1, scaleY: 1, notes: [] }
+  saveProfile(profile)
+  const frame = { ...newFrame(0, 0, 'a.png'), status: 'completed', verdict: 'abnormal', categories: ['手机'] }
+  const value = task({ frames: [frame] }); rememberTask(value)
+  const entered = deferred(), release = deferred()
+  globalThis.fetch = async (_url, options) => {
+    entered.resolve()
+    await abortable(options.signal).catch(() => release.promise)
+    return response({ objects: [{ label: '手机', bbox: [100, 100, 300, 300] }] })
+  }
+  const runner = createRegionRunner(value, config, new AbortController().signal, false)
+  runner.enqueue(frame); await entered.promise
+  let stopped = false
+  const stopping = runner.abort().then(() => { stopped = true })
+  await delay(20); assert.equal(stopped, false)
+  release.resolve(); await stopping
+  assert.equal(frame.regionStatus, 'failed')
+  assert.equal(frame.regions.length, 0)
+  await flushSave(value)
+  globalThis.fetch = async () => response('unrelated output')
+  await assert.rejects(localizeFrame(config, profile, { framePath: 'unused', timestampMs: 0, itemIds: ['phone'] }), /无法解析/)
+})
+test('行为识别取消同样等待请求退出并保存失败片段', async () => {
+  const entered = deferred()
+  globalThis.fetch = async (_url, options) => { entered.resolve(); return abortable(options.signal) }
+  const summary = await startBehaviorReview('/test.mp4'); await entered.promise
+  await cancelActiveTask(summary.id)
+  const value = getTask(summary.id)
+  assert.equal(value.status, 'cancelled')
+  assert.equal(value.behaviorWindows[0].status, 'failed')
+  assert.equal(taskSession.activeRuns.has(summary.id), false)
+  assert.equal(JSON.parse(fs.readFileSync(taskFile(value), 'utf8')).status, 'cancelled')
+})
+test('退出等待任务取消与最终落盘，并拒绝新任务', async () => {
+  const entered = deferred()
+  globalThis.fetch = async (_url, options) => { entered.resolve(); return abortable(options.signal) }
+  const summary = await startReview('/test.mp4'); await entered.promise
+  await shutdownTaskManager()
+  assert.equal(taskSession.activeRuns.size, 0)
+  assert.equal(JSON.parse(fs.readFileSync(taskFile(getTask(summary.id)), 'utf8')).status, 'cancelled')
+  await assert.rejects(startReview('/test.mp4'), /退出/)
+})
+
+export async function runChecks() {
+  saveSettings(initial)
+  config = getResolvedModelConfig()
+  let failed = 0
+  try {
+    for (const { name, run } of tests) {
+      try { await run(); console.log(`PASS ${name}`) }
+      catch (error) { failed++; console.error(`FAIL ${name}\n${error.stack}`) }
+      finally { globalThis.fetch = originalFetch }
+    }
+  } finally {
+    await flushAllTasks()
+    globalThis.fetch = originalFetch
+  }
+  console.log(`可靠性回归：PASS ${tests.length - failed} / FAIL ${failed}`)
+  if (failed) throw new Error(`${failed} 项可靠性回归失败`)
+}

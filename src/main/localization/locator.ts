@@ -190,11 +190,13 @@ export async function localizeFrame(
     maxTokens: Math.max(config.maxTokens, 1200),
     timeoutSec: Math.min(config.timeoutSec, 60),
     signal,
+    requireComplete: true,
     operation: '违禁物定位'
   })
 
   // 先用"发送尺寸"解析；absolute_px 下部分网关会按原图像素返回，自动按原图尺寸兜底
   const parsed = parseGrounding(content, profile.parseDialects.slice(0, MAX_PARSE_DIALECTS))
+  if (!parsed.valid) throw new Error('定位结果无法解析，请重试定位')
   const adaptive = mapRawBoxesAdaptive(parsed.boxes, {
     space: profile.coordinateSpace,
     order: profile.boxOrder,
@@ -206,6 +208,9 @@ export async function localizeFrame(
     scaleY: profile.scaleY
   })
   const mapped = adaptive.mapped
+  if (parsed.boxes.length > 0 && mapped.length === 0) {
+    throw new Error('定位结果中的坐标无效，请检查坐标配置后重试')
+  }
   if (adaptive.usedOrigin) {
     logger.warn('定位坐标疑似按原图像素返回，已自动换算', {
       sent: `${prepared.sentWidth}x${prepared.sentHeight}`,

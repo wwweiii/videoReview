@@ -6,9 +6,8 @@ import { analyzeBehaviorWindow } from '../model/behavior'
 import { deriveVerdict } from '../model/analysis'
 import { FatalModelError } from '../model/client'
 import { getFramesDir } from '../paths'
-import { logger } from '../logger'
-import { clearSummaryThrottle, emitBehaviorWindow, emitSummary } from './event'
-import { markUnresolvedFailed } from './analysis'
+import { emitBehaviorWindow, emitSummary } from './event'
+import { failTask, finishTask } from './outcome'
 import { taskSession } from './session'
 import { flushSave, newFrame, scheduleSave } from './store'
 
@@ -52,6 +51,7 @@ export async function runBehaviorTask(
     const windows = task.behaviorWindows ?? []
     for (const window of windows) {
       if (controller.signal.aborted) throw new Error('任务已取消')
+      if (task.saveError) throw new Error(task.saveError)
       if (window.status === 'completed') continue
       window.status = 'analyzing'
       emitBehaviorWindow(task, window)
@@ -64,6 +64,7 @@ export async function runBehaviorTask(
           sampling.behaviors,
           sampling.fps
         )
+        if (controller.signal.aborted) throw new Error('任务已取消')
         const verdict = deriveVerdict(result, task.config.confidenceThreshold)
         Object.assign(window, {
           status: 'completed',
@@ -94,23 +95,10 @@ export async function runBehaviorTask(
       scheduleSave(task)
       emitBehaviorWindow(task, window)
     }
-    task.status = windows.some((window) => window.status === 'failed') ? 'completed_with_errors' : 'completed'
-    task.progress = 100
-    task.phaseMessage = '已完成'
-    await flushSave(task)
-    emitSummary(task, true)
+    if (controller.signal.aborted) throw new Error('任务已取消')
+    await finishTask(task, controller.signal)
   } catch (error) {
     const cancelled = controller.signal.aborted && Boolean(run?.cancelRequested)
-    const message = error instanceof Error ? error.message : String(error)
-    task.status = cancelled ? 'cancelled' : 'failed'
-    task.phaseMessage = cancelled ? '已取消' : '行为识别失败'
-    task.errorMessage = cancelled ? '' : message
-    markUnresolvedFailed(task, cancelled ? '任务已取消' : message)
-    if (!cancelled) logger.error('行为识别失败', error)
-    await flushSave(task)
-    emitSummary(task, true)
-  } finally {
-    taskSession.activeRuns.delete(task.id)
-    clearSummaryThrottle(task.id)
+    await failTask(task, error, cancelled)
   }
 }

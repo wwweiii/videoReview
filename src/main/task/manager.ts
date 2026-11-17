@@ -1,26 +1,18 @@
 import crypto from 'node:crypto'
-import fs from 'node:fs'
 import type { TaskKind, TaskRecord, TaskSummary } from '@shared/types'
 import { taskResults } from '@shared/behavior'
 import { getResolvedModelConfig } from '../config/model-config'
 import { getAnalysisConfig, getBehaviorConfig } from '../config/settings'
-import { logger } from '../logger'
 import { probeVideo } from '../media/ffmpeg'
-import { getTaskDir } from '../paths'
 import { analyzeFrames, markUnresolvedFailed } from './analysis'
 import { clearSummaryThrottle, emitSummary } from './event'
 import { regionCandidateFrames, localizeFrames } from './regions'
-import { finishTask, runTask } from './runner'
-import { taskSession } from './session'
+import { runTask } from './runner'
+import { failTask, finishTask } from './outcome'
+import { taskSession, type ActiveRun } from './session'
 import {
-  allTaskIds,
-  deleteStoredTask,
-  ensureTasksDirectory,
-  flushSave,
-  readTask,
-  rememberTask,
-  scheduleSave,
-  validateTaskId
+  allTaskIds, deleteStoredTask, ensureTasksDirectory, flushAllTasks, flushSave,
+  readTask, rememberTask, scheduleSave, validateTaskId
 } from './store'
 import { buildSummary } from './summary'
 import { runBehaviorTask } from './behavior'
@@ -39,13 +31,11 @@ export function initializeTaskManager(): void {
     if (task.status === 'extracting' || task.status === 'analyzing') {
       task.status = 'interrupted'
       task.phaseMessage = '已中断'
-      for (const frame of taskResults(task)) {
-        if (frame.status === 'analyzing' || frame.status === 'pending') {
-          frame.status = 'failed'
-          frame.verdict = 'failed'
-          frame.error = '任务已中断'
-        }
-      }
+      markUnresolvedFailed(task, '任务已中断')
+      scheduleSave(task, true)
+    } else if (task.frames.some((frame) => frame.regionStatus === 'pending')) {
+      // 修复旧版本取消后遗留的定位中状态。
+      markUnresolvedFailed(task, '定位已中断')
       scheduleSave(task, true)
     }
   }
@@ -66,74 +56,80 @@ export function getTask(taskId: string): TaskRecord {
   return task
 }
 
-export async function startReview(filePath: string): Promise<TaskSummary> {
-  return startTask(filePath, 'items')
+function assertAcceptingTasks(): void {
+  if (taskSession.shuttingDown) throw new Error('应用正在退出，请稍后重试')
 }
 
-export async function startBehaviorReview(filePath: string): Promise<TaskSummary> {
-  return startTask(filePath, 'behavior')
+/** 启动、重试和重定位共用生命周期，退出时可以等待所有工作完成。 */
+function launchRun(task: TaskRecord, work: (controller: AbortController) => Promise<void>): void {
+  assertAcceptingTasks()
+  const abortController = new AbortController()
+  const run: ActiveRun = { taskId: task.id, abortController, cancelRequested: false, completion: Promise.resolve() }
+  taskSession.activeRuns.set(task.id, run)
+  run.completion = Promise.resolve()
+    .then(() => work(abortController))
+    .catch((error) => failTask(task, error, run.cancelRequested))
+    .finally(() => {
+      taskSession.activeRuns.delete(task.id)
+      clearSummaryThrottle(task.id)
+    })
+}
+
+function prepareTask(filePath: string, kind: TaskKind): Promise<TaskSummary> {
+  const preparation = startTask(filePath, kind)
+  taskSession.preparations.add(preparation)
+  void preparation.then(() => taskSession.preparations.delete(preparation), () => taskSession.preparations.delete(preparation))
+  return preparation
+}
+
+export function startReview(filePath: string): Promise<TaskSummary> {
+  return prepareTask(filePath, 'items')
+}
+
+export function startBehaviorReview(filePath: string): Promise<TaskSummary> {
+  return prepareTask(filePath, 'behavior')
 }
 
 async function startTask(filePath: string, kind: TaskKind): Promise<TaskSummary> {
+  assertAcceptingTasks()
   if (typeof filePath !== 'string' || !filePath.trim()) throw new Error('请选择视频文件')
-
   const modelConfig = getResolvedModelConfig()
   const config = getAnalysisConfig()
-  if (kind === 'items' && config.prohibitedItems.length === 0) {
-    throw new Error('请先在设置中选择检测物品')
-  }
-  if (kind === 'behavior' && config.behaviorItems.length === 0) {
-    throw new Error('请先在设置中添加至少一个识别行为')
-  }
-
+  const behaviorConfig = kind === 'behavior' ? getBehaviorConfig() : undefined
+  if (kind === 'items' && config.prohibitedItems.length === 0) throw new Error('请先在设置中选择检测物品')
+  if (kind === 'behavior' && !behaviorConfig?.behaviors.length) throw new Error('请先在设置中添加至少一个识别行为')
   const source = await probeVideo(filePath)
-
+  assertAcceptingTasks()
   const now = new Date().toISOString()
   const task: TaskRecord = {
-    id: crypto.randomUUID(),
-    kind,
-    name: source.fileName,
-    source,
+    id: crypto.randomUUID(), kind, name: source.fileName, source,
     config: kind === 'behavior' ? { ...config, localize: false } : config,
-    status: 'extracting',
-    createdAt: now,
-    updatedAt: now,
-    frames: [],
-    errorMessage: '',
-    progress: 0,
-    phaseMessage: '正在抽帧',
-    regionProfile: null,
-    ...(kind === 'behavior'
-      ? {
-          behaviorConfig: getBehaviorConfig(),
-          behaviorWindows: []
-        }
-      : {})
+    status: 'extracting', createdAt: now, updatedAt: now, frames: [],
+    errorMessage: '', progress: 0, phaseMessage: '正在抽帧', regionProfile: null,
+    ...(behaviorConfig ? { behaviorConfig, behaviorWindows: [] } : {})
   }
-
-  fs.mkdirSync(getTaskDir(task.id), { recursive: true })
   rememberTask(task)
-  scheduleSave(task, true)
+  try {
+    await flushSave(task)
+    assertAcceptingTasks()
+  } catch (error) {
+    await failTask(task, error, false)
+    throw error
+  }
   emitSummary(task, true)
-
-  const abortController = new AbortController()
-  taskSession.activeRuns.set(task.id, { taskId: task.id, abortController, cancelRequested: false })
-  const runner = kind === 'behavior' ? runBehaviorTask : runTask
-  void runner(task, modelConfig, abortController).catch((error) => {
-    logger.error('任务运行异常', error)
-  })
+  launchRun(task, (controller) => (kind === 'behavior' ? runBehaviorTask : runTask)(task, modelConfig, controller))
   return buildSummary(task)
 }
 
-/** 只重跑定位（不重跑判定），用于换模型后补框 */
+/** 只重跑定位，不重跑判定。 */
 export function relocalizeTask(taskId: string): TaskSummary {
+  assertAcceptingTasks()
   const task = getTask(taskId)
   if (taskSession.activeRuns.has(taskId)) throw new Error('任务正在处理')
   if (task.kind === 'behavior') throw new Error('行为任务不使用物品定位')
   if (!task.config.localize) throw new Error('当前任务未开启定位标记')
   const targets = regionCandidateFrames(task)
   if (targets.length === 0) throw new Error('没有需要定位的异常帧')
-
   const modelConfig = getResolvedModelConfig()
   for (const frame of targets) {
     frame.regions = []
@@ -146,141 +142,78 @@ export function relocalizeTask(taskId: string): TaskSummary {
   task.progress = 0
   task.phaseMessage = '正在定位违禁物'
   task.errorMessage = ''
-  scheduleSave(task, true)
   emitSummary(task, true)
-
-  const abortController = new AbortController()
-  taskSession.activeRuns.set(task.id, { taskId: task.id, abortController, cancelRequested: false })
-  void (async () => {
-    try {
-      await localizeFrames(task, modelConfig, abortController.signal, { onlyLocalize: true })
-      await finishTask(task)
-    } catch (error) {
-      const cancelled = abortController.signal.aborted && (taskSession.activeRuns.get(task.id)?.cancelRequested ?? false)
-      const message = error instanceof Error ? error.message : String(error)
-      if (cancelled) {
-        task.status = 'cancelled'
-        task.phaseMessage = '已取消'
-        task.errorMessage = ''
-      } else {
-        task.status = 'failed'
-        task.phaseMessage = '任务失败'
-        task.errorMessage = message
-      }
-      for (const frame of targets) {
-        if (frame.regionStatus === 'pending') {
-          frame.regionStatus = 'failed'
-          frame.regionError = message
-        }
-      }
-      await flushSave(task)
-      emitSummary(task, true)
-    } finally {
-      taskSession.activeRuns.delete(task.id)
-      clearSummaryThrottle(task.id)
-    }
-  })()
+  launchRun(task, async (controller) => {
+    await flushSave(task)
+    await localizeFrames(task, modelConfig, controller.signal, { onlyLocalize: true })
+    if (controller.signal.aborted) throw new Error('任务已取消')
+    await finishTask(task, controller.signal)
+  })
   return buildSummary(task)
 }
 
 export function retryFailedFrames(taskId: string): TaskSummary {
+  assertAcceptingTasks()
   const task = getTask(taskId)
   if (taskSession.activeRuns.has(taskId)) throw new Error('任务正在处理')
-  if (task.kind === 'behavior') {
-    const failedWindows = (task.behaviorWindows ?? []).filter((window) => window.status === 'failed')
-    if (failedWindows.length === 0) throw new Error('没有失败片段')
-    const modelConfig = getResolvedModelConfig()
-    for (const window of failedWindows) {
-      window.status = 'pending'
-      window.verdict = 'pending'
-      window.error = ''
-      window.rawResponse = ''
-      window.analyzedAt = null
-    }
-    task.status = 'analyzing'
-    task.phaseMessage = '正在重试行为识别'
-    task.errorMessage = ''
-    scheduleSave(task, true)
-    emitSummary(task, true)
-    const abortController = new AbortController()
-    taskSession.activeRuns.set(task.id, { taskId: task.id, abortController, cancelRequested: false })
-    void runBehaviorTask(task, modelConfig, abortController, true)
-    return buildSummary(task)
+  const results = taskResults(task)
+  const failed = results.filter((frame) => frame.status === 'failed')
+  const needsExtraction = results.length === 0
+  const needsRegions = task.kind !== 'behavior' && task.config.localize &&
+    regionCandidateFrames(task).some((frame) => frame.regionStatus !== 'ok')
+  if (!needsExtraction && failed.length === 0 && !needsRegions && !task.saveError) {
+    throw new Error('没有需要重试的结果')
   }
-  const failed = task.frames.filter((frame) => frame.status === 'failed')
-  if (failed.length === 0) throw new Error('没有失败帧')
-
   const modelConfig = getResolvedModelConfig()
   for (const frame of failed) {
-    frame.status = 'pending'
-    frame.verdict = 'pending'
-    frame.error = ''
-    frame.rawResponse = ''
-    frame.analyzedAt = null
-    frame.model = ''
-    frame.regions = []
-    frame.regionStatus = 'none'
-    frame.regionLevel = 'L0'
-    frame.regionError = ''
-    frame.regionRaw = ''
+    Object.assign(frame, {
+      status: 'pending', verdict: 'pending', error: '', rawResponse: '', analyzedAt: null,
+      model: '', regions: [], regionStatus: 'none', regionLevel: 'L0', regionError: '', regionRaw: ''
+    })
   }
-  task.status = 'analyzing'
+  task.status = needsExtraction ? 'extracting' : 'analyzing'
   task.progress = 0
-  task.phaseMessage = '正在分析'
+  task.phaseMessage = needsExtraction ? '正在重新抽帧' : '正在重试'
   task.errorMessage = ''
-  scheduleSave(task, true)
   emitSummary(task, true)
-
-  const abortController = new AbortController()
-  taskSession.activeRuns.set(task.id, { taskId: task.id, abortController, cancelRequested: false })
-  const indices = new Set(failed.map((frame) => frame.index))
-  void (async () => {
-    try {
-      await analyzeFrames(task, modelConfig, abortController.signal, indices)
-      await localizeFrames(task, modelConfig, abortController.signal, {
-        onlyLocalize: false,
-        onlyPendingRegions: true
-      })
-      await finishTask(task)
-    } catch (error) {
-      const cancelled = abortController.signal.aborted && (taskSession.activeRuns.get(task.id)?.cancelRequested ?? false)
-      const message = error instanceof Error ? error.message : String(error)
-      if (cancelled) {
-        task.status = 'cancelled'
-        task.phaseMessage = '已取消'
-        markUnresolvedFailed(task, '任务已取消')
-      } else {
-        task.status = 'failed'
-        task.phaseMessage = '任务失败'
-        task.errorMessage = message
-        markUnresolvedFailed(task, message)
-      }
-      await flushSave(task)
-      emitSummary(task, true)
-    } finally {
-      taskSession.activeRuns.delete(task.id)
+  launchRun(task, async (controller) => {
+    await flushSave(task)
+    if (task.kind === 'behavior') {
+      await runBehaviorTask(task, modelConfig, controller, !needsExtraction)
+    } else if (needsExtraction) {
+      await runTask(task, modelConfig, controller)
+    } else {
+      await analyzeFrames(task, modelConfig, controller.signal, new Set(failed.map((frame) => frame.index)))
+      await localizeFrames(task, modelConfig, controller.signal, { onlyLocalize: false, onlyPendingRegions: true })
+      if (controller.signal.aborted) throw new Error('任务已取消')
+      await finishTask(task, controller.signal)
     }
-  })()
+  })
   return buildSummary(task)
 }
 
-export function cancelActiveTask(taskId: string): boolean {
+export async function cancelActiveTask(taskId: string): Promise<boolean> {
   const run = taskSession.activeRuns.get(taskId)
   if (!run) return false
   run.cancelRequested = true
   run.abortController.abort()
+  await run.completion
   return true
 }
 
-export function deleteTask(taskId: string): void {
+export async function deleteTask(taskId: string): Promise<void> {
   validateTaskId(taskId)
   if (taskSession.activeRuns.has(taskId)) throw new Error('任务正在处理')
-  deleteStoredTask(taskId)
+  await deleteStoredTask(taskId)
 }
 
-export function shutdownTaskManager(): void {
-  for (const run of taskSession.activeRuns.values()) {
+export async function shutdownTaskManager(): Promise<void> {
+  taskSession.shuttingDown = true
+  const runs = [...taskSession.activeRuns.values()]
+  for (const run of runs) {
     run.cancelRequested = true
     run.abortController.abort()
   }
+  await Promise.allSettled([...runs.map((run) => run.completion), ...taskSession.preparations])
+  await flushAllTasks()
 }

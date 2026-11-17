@@ -23,6 +23,7 @@ import { FrameDrawer } from '../components/task/FrameDrawer'
 import { FrameTable } from '../components/task/FrameTable'
 import { BehaviorResults } from '../components/task/BehaviorResults'
 import { friendlyError, type ShowToast } from '../lib/ui'
+import { flushPendingSettings } from '../lib/settings-autosave'
 
 /**
  * 任务详情页容器：任务头 + 进度 + 提示 + 汇总 + 操作，结果列表与帧抽屉拆到组件。
@@ -93,6 +94,7 @@ export function TaskDetailPage({
     if (!task) return
     setBusyAction('retry')
     try {
+      await flushPendingSettings()
       await window.framelens.retryFailedFrames(task.id)
       await onRefresh()
     } catch (error) {
@@ -106,6 +108,7 @@ export function TaskDetailPage({
     if (!task) return
     setBusyAction('relocalize')
     try {
+      await flushPendingSettings()
       await window.framelens.relocalizeTask(task.id)
       await onRefresh()
       showToast('success', '已开始重新定位')
@@ -178,7 +181,7 @@ export function TaskDetailPage({
               <StopCircle size={17} />
               取消
             </button>
-          ) : stats.failed > 0 ? (
+          ) : stats.failed > 0 || task.saveError || stats.total === 0 || task.frames.some((frame) => frame.regionStatus === 'failed') ? (
             <button
               type="button"
               className="button button-secondary"
@@ -235,6 +238,13 @@ export function TaskDetailPage({
             <div className="progress-fill" style={{ width: `${Math.max(1, task.progress)}%` }} />
           </div>
         </section>
+      ) : null}
+
+      {task.saveError ? (
+        <div className="notice" role="alert">
+          <AlertCircle size={19} />
+          <span>{task.saveError}。请检查磁盘空间和目录权限，恢复后点击重试。</span>
+        </div>
       ) : null}
 
       {!active && (task.status === 'failed' || task.status === 'interrupted') ? (

@@ -10,6 +10,7 @@ import { TaskHistoryPage } from './pages/TaskHistoryPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { WorkbenchPage, type UploadedFile } from './pages/WorkbenchPage'
 import { friendlyError, type ShowToast } from './lib/ui'
+import { flushPendingSettings } from './lib/settings-autosave'
 
 const UPLOADED_FILES_STORAGE_KEY = 'framelens.uploaded-files'
 
@@ -122,6 +123,18 @@ export default function App(): React.JSX.Element {
   )
 
   useEffect(() => {
+    return window.framelens.onBeforeClose(async () => {
+      try {
+        await flushPendingSettings()
+        window.framelens.completeClose(true)
+      } catch (error) {
+        showToast('error', `退出前保存失败：${friendlyError(error)}`)
+        window.framelens.completeClose(false)
+      }
+    })
+  }, [showToast])
+
+  useEffect(() => {
     let cancelled = false
     void window.framelens
       .getBootstrap()
@@ -160,6 +173,7 @@ export default function App(): React.JSX.Element {
           progress: event.summary.progress,
           phaseMessage: event.summary.phaseMessage,
           errorMessage: event.summary.errorMessage,
+          saveError: event.summary.saveError,
           updatedAt: event.summary.updatedAt
         }
         if (event.kind === 'frame') {
@@ -283,15 +297,15 @@ export default function App(): React.JSX.Element {
           />
         ) : null}
 
-        {view.name === 'settings' ? (
+        <div hidden={view.name !== 'settings'}>
           <SettingsPage
             settings={settings}
-            section={view.section}
+            section={view.name === 'settings' ? view.section : 'items'}
             onSectionChange={changeSettingsSection}
             onSaved={setSettings}
             showToast={showToast}
           />
-        ) : null}
+        </div>
 
         {view.name === 'task' ? (
           <TaskDetailPage

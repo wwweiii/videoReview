@@ -307,11 +307,15 @@ function persistSettings(settings: StoredSettings): void {
   const filePath = getSettingsPath()
   fs.mkdirSync(path.dirname(filePath), { recursive: true })
   const temporary = `${filePath}.${process.pid}.tmp`
-  fs.writeFileSync(temporary, JSON.stringify(settings, null, 2), {
-    encoding: 'utf8',
-    mode: 0o600
-  })
-  fs.renameSync(temporary, filePath)
+  try {
+    fs.writeFileSync(temporary, JSON.stringify(settings, null, 2), {
+      encoding: 'utf8',
+      mode: 0o600
+    })
+    fs.renameSync(temporary, filePath)
+  } finally {
+    fs.rmSync(temporary, { force: true })
+  }
 }
 
 export function getPublicSettings(): PublicSettings {
@@ -402,22 +406,41 @@ export function applyRuntimeOverrides(
 
 export function saveSettings(input: SaveSettingsInput): PublicSettings {
   const current = loadSettings()
-  if (input.modelMode === 'preset' && !isPresetAvailable()) {
+  if (input.section && !['items', 'behavior', 'model'].includes(input.section)) {
+    throw new Error('未知设置分区')
+  }
+  const saveModel = !input.section || input.section === 'model'
+  const saveItems = !input.section || input.section === 'items'
+  const saveBehavior = !input.section || input.section === 'behavior'
+  if (saveModel && input.modelMode === 'preset' && !isPresetAvailable()) {
     throw new Error('预设模型不可用')
   }
-  if (input.modelMode === 'custom') validateCustomModel(input.customModel)
+  if (saveModel && input.modelMode === 'custom') validateCustomModel(input.customModel)
+  if (saveModel && input.customModel.extraBody?.trim()) {
+    let value: unknown
+    try {
+      value = JSON.parse(input.customModel.extraBody)
+    } catch {
+      throw new Error('额外请求体不是合法 JSON')
+    }
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new Error('额外请求体必须是 JSON 对象')
+    }
+  }
 
   const customItems = normalizeCustomItems(input.customProhibitedItems)
   const selectedItems = normalizeSelectedItems(input.prohibitedItems, customItems)
 
-  const nextCustom: StoredCustomModel = {
-    ...current.customModel,
-    baseUrl: input.customModel.baseUrl.trim(),
-    model: input.customModel.model.trim(),
-    ...applyRuntimeOverrides(input.customModel, current.customModel)
-  }
+  const nextCustom: StoredCustomModel = saveModel
+    ? {
+        ...current.customModel,
+        baseUrl: input.customModel.baseUrl.trim(),
+        model: input.customModel.model.trim(),
+        ...applyRuntimeOverrides(input.customModel, current.customModel)
+      }
+    : current.customModel
 
-  if (input.customModel.apiKey?.trim()) {
+  if (saveModel && input.customModel.apiKey?.trim()) {
     delete nextCustom.apiKeyPlain
     Object.assign(nextCustom, protectApiKey(input.customModel.apiKey.trim()))
   }
@@ -427,22 +450,31 @@ export function saveSettings(input: SaveSettingsInput): PublicSettings {
     strideSec: input.behaviorStrideSec,
     fps: input.behaviorFps
   })
-  cachedSettings = {
+  const next: StoredSettings = {
     ...current,
-    modelMode: input.modelMode,
-    developerMode: Boolean(input.developerMode),
-    customModel: nextCustom,
-    intervalSec: normalizeInterval(input.intervalSec),
-    prohibitedItems: selectedItems,
-    customProhibitedItems: customItems,
-    analysisMode: input.analysisMode === 'group' ? 'group' : 'single',
-    groupSize: Math.round(clampNumber(input.groupSize, 2, 8)),
-    localize: Boolean(input.localize),
-    behaviorItems: normalizeBehaviorItems(input.behaviorItems),
-    behaviorWindowSec: behaviorSampling.windowSec,
-    behaviorStrideSec: behaviorSampling.strideSec,
-    behaviorFps: behaviorSampling.fps
+    ...(saveModel
+      ? { modelMode: input.modelMode, developerMode: Boolean(input.developerMode), customModel: nextCustom }
+      : {}),
+    ...(saveItems
+      ? {
+          intervalSec: normalizeInterval(input.intervalSec),
+          prohibitedItems: selectedItems,
+          customProhibitedItems: customItems,
+          analysisMode: input.analysisMode === 'group' ? 'group' : 'single',
+          groupSize: Math.round(clampNumber(input.groupSize, 2, 8)),
+          localize: Boolean(input.localize)
+        }
+      : {}),
+    ...(saveBehavior
+      ? {
+          behaviorItems: normalizeBehaviorItems(input.behaviorItems),
+          behaviorWindowSec: behaviorSampling.windowSec,
+          behaviorStrideSec: behaviorSampling.strideSec,
+          behaviorFps: behaviorSampling.fps
+        }
+      : {})
   }
-  persistSettings(cachedSettings)
+  persistSettings(next)
+  cachedSettings = next
   return getPublicSettings()
 }

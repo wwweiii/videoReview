@@ -9,8 +9,11 @@ export interface ActiveRun {
   taskId: string
   abortController: AbortController
   cancelRequested: boolean
+  completion: Promise<void>
 }
 
-export const taskSession: { activeRuns: Map<string, ActiveRun> } = {
-  activeRuns: new Map()
+export const taskSession = {
+  activeRuns: new Map<string, ActiveRun>(),
+  preparations: new Set<Promise<unknown>>(),
+  shuttingDown: false
 }

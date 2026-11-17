@@ -1,4 +1,4 @@
-import { canonicalizeItemLabel } from '@shared/items'
+import { matchItem } from '@shared/items'
 import type { CustomProhibitedItem, ModelCallTrace, RiskLevel } from '@shared/types'
 import type { ResolvedModelConfig } from '../config/model-config'
 import { requestChat } from './client'
@@ -25,12 +25,10 @@ export function extractJsonValue(text: string): unknown {
   try {
     return JSON.parse(cleaned)
   } catch {
-    // Find the most likely JSON payload using bracket balancing.
-    for (const opener of ['{', '[']) {
-      const start = cleaned.indexOf(opener)
-      if (start < 0) continue
-      const closer = opener === '{' ? '}' : ']'
-      let depth = 0
+    // 只提取最外层载荷；外层损坏时不把其中一个完整子对象误当成全部结果。
+    const start = cleaned.search(/[\[{]/)
+    if (start >= 0) {
+      const stack: string[] = []
       let inString = false
       let escaped = false
       for (let index = start; index < cleaned.length; index += 1) {
@@ -42,10 +40,10 @@ export function extractJsonValue(text: string): unknown {
           continue
         }
         if (char === '"') inString = true
-        else if (char === opener) depth += 1
-        else if (char === closer) {
-          depth -= 1
-          if (depth === 0) {
+        else if (char === '{' || char === '[') stack.push(char)
+        else if (char === '}' || char === ']') {
+          if (stack.pop() !== (char === '}' ? '{' : '[')) break
+          if (stack.length === 0) {
             try {
               return JSON.parse(cleaned.slice(start, index + 1))
             } catch {
@@ -61,7 +59,7 @@ export function extractJsonValue(text: string): unknown {
 
 function toBoolean(value: unknown): boolean | null {
   if (typeof value === 'boolean') return value
-  if (typeof value === 'number') return value !== 0
+  if (value === 0 || value === 1) return value === 1
   if (typeof value === 'string') {
     const normalized = value.trim().toLowerCase()
     if (['true', 'yes', '1', '是', '异常', '有'].includes(normalized)) return true
@@ -99,32 +97,44 @@ function normalizeRisk(value: unknown, abnormal: boolean): RiskLevel {
 
 function normalizeConfidence(value: unknown): number | null {
   let number: number | null = null
+  const percentage = typeof value === 'string' && value.trim().endsWith('%')
   if (typeof value === 'number') number = value
   if (typeof value === 'string') {
-    const parsed = Number.parseFloat(value.replace('%', ''))
+    const text = value.trim()
+    if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?%?$/i.test(text)) return null
+    const parsed = Number(text.replace(/%$/, ''))
     if (Number.isFinite(parsed)) number = parsed
+    if (number !== null && text.endsWith('%')) number /= 100
   }
   if (number === null || !Number.isFinite(number)) return null
-  if (number > 1) number /= 100
-  return Math.min(1, Math.max(0, number))
+  if (number > 1 && !percentage) number /= 100
+  return number >= 0 && number <= 1 ? number : null
 }
 
-function normalizeCategories(value: unknown, customItems: CustomProhibitedItem[]): string[] {
+function normalizeCategories(value: unknown, customItems: CustomProhibitedItem[], itemIds?: string[]): {
+  categories: string[]; inconsistent: boolean
+} {
   const values = toStringArray(value)
   const result: string[] = []
   for (const raw of values) {
     const normalized = raw.trim()
     if (!normalized) continue
-    const known = canonicalizeItemLabel(normalized, customItems)
+    const match = matchItem(normalized, itemIds, customItems)
+    const known = match.itemId ? match.category : normalized.slice(0, 24)
     if (!result.includes(known)) result.push(known)
   }
-  return result
+  return {
+    categories: result,
+    inconsistent: values.some((label) => !matchItem(label, itemIds, customItems).itemId) ||
+      !(typeof value === 'string' || (Array.isArray(value) && value.every((item) => typeof item === 'string')))
+  }
 }
 
-function parseAnalysisObject(
+export function parseAnalysisObject(
   value: Record<string, unknown>,
   raw: string,
-  customItems: CustomProhibitedItem[]
+  customItems: CustomProhibitedItem[],
+  itemIds?: string[]
 ): ParsedAnalysis {
   const abnormal = toBoolean(
     value.abnormal ??
@@ -141,17 +151,16 @@ function parseAnalysisObject(
         value.needHumanReview ??
         value.needs_review ??
         value.requires_review
-    ) ?? false
+    ) ?? true
+
+  const { categories, inconsistent } = normalizeCategories(
+    value.categories ?? value.category ?? value.items ?? value.objects, customItems, itemIds
+  )
 
   return {
     abnormal,
     riskLevel: normalizeRisk(value.risk_level ?? value.riskLevel, abnormal),
-    categories: abnormal
-      ? normalizeCategories(
-          value.categories ?? value.category ?? value.items ?? value.objects,
-          customItems
-        )
-      : [],
+    categories: abnormal ? categories : [],
     description: firstString(
       value.description,
       value.anomaly_description,
@@ -160,7 +169,7 @@ function parseAnalysisObject(
     ),
     evidence: firstString(value.evidence, value.reason, value.explanation, value.basis),
     confidence: normalizeConfidence(value.confidence ?? value.score),
-    needHumanReview,
+    needHumanReview: needHumanReview || inconsistent || (abnormal ? categories.length === 0 : categories.length > 0),
     raw,
     traces: []
   }
@@ -188,6 +197,7 @@ export async function analyzeSingleFrame(
     const messages = buildSingleMessages(filePath, timestampMs, itemIds, customItems)
     const { content, traces } = await requestChat(config, messages, {
       signal,
+      requireComplete: true,
       operation: '物品判定'
     })
     allTraces.push(...traces)
@@ -196,9 +206,10 @@ export async function analyzeSingleFrame(
       const object = extractObject(parsed)
       if (Array.isArray(object.frames)) {
         const first = object.frames[0]
-        return { ...parseAnalysisObject(extractObject(first), content, customItems), traces: allTraces }
+        if (object.frames.length !== 1) throw new Error('单帧请求返回了多个判定结果')
+        return { ...parseAnalysisObject(extractObject(first), content, customItems, itemIds), traces: allTraces }
       }
-      return { ...parseAnalysisObject(object, content, customItems), traces: allTraces }
+      return { ...parseAnalysisObject(object, content, customItems, itemIds), traces: allTraces }
     } catch (error) {
       lastParseError = error instanceof Error ? error : new Error(String(error))
       if (attempt === 0) continue
@@ -219,42 +230,45 @@ export async function analyzeFrameGroup(
   const { content, traces } = await requestChat(config, messages, {
     maxTokens: Math.max(700, frames.length * 350),
     signal,
+    requireComplete: true,
     operation: '物品分组判定'
   })
 
+  return { analyses: parseFrameGroup(content, frames.length, customItems, itemIds, traces), traces }
+}
+
+/** 缺失、重复或编号不明确的结果不分配给任何帧，由调用方标记失败。 */
+export function parseFrameGroup(
+  content: string,
+  frameCount: number,
+  customItems: CustomProhibitedItem[] = [],
+  itemIds?: string[],
+  traces: ModelCallTrace[] = []
+): Map<number, ParsedAnalysis> {
   const parsed = extractJsonValue(content)
-  const root = extractObject(parsed)
-  const rawFrames = root.frames ?? root.results
+  const root = Array.isArray(parsed) ? null : extractObject(parsed)
+  const rawFrames = Array.isArray(parsed) ? parsed : root?.frames ?? root?.results
   const result = new Map<number, ParsedAnalysis>()
+  const seen = new Set<number>()
 
   if (Array.isArray(rawFrames)) {
+    const positional = rawFrames.length === frameCount && rawFrames.every((item) =>
+      item && typeof item === 'object' && !('frame_index' in item) && !('index' in item))
     rawFrames.forEach((item, position) => {
       try {
         const object = extractObject(item)
-        const indexValue = object.frame_index ?? object.index ?? position
+        const indexValue = object.frame_index ?? object.index ?? (positional ? position : undefined)
+        if (typeof indexValue !== 'number' && !(typeof indexValue === 'string' && /^\d+$/.test(indexValue))) return
         const index = Number(indexValue)
-        if (!Number.isInteger(index) || index < 0 || index >= frames.length) return
-        if (result.has(index)) return
-        result.set(index, { ...parseAnalysisObject(object, content, customItems), traces })
+        if (!Number.isInteger(index) || index < 0 || index >= frameCount) return
+        if (seen.has(index)) { result.delete(index); return }
+        seen.add(index)
+        result.set(index, { ...parseAnalysisObject(object, content, customItems, itemIds), traces })
       } catch {
         // A malformed item is treated as a missing result for that frame.
       }
     })
-    return { analyses: result, traces }
-  }
-
-  if (Array.isArray(parsed)) {
-    parsed.forEach((item, position) => {
-      try {
-        const object = extractObject(item)
-        if (position < frames.length) {
-          result.set(position, { ...parseAnalysisObject(object, content, customItems), traces })
-        }
-      } catch {
-        // Ignore malformed entries; handled as missing by the caller.
-      }
-    })
-    return { analyses: result, traces }
+    return result
   }
 
   throw new Error('模型返回格式异常')
@@ -264,19 +278,14 @@ export function deriveVerdict(
   analysis: ParsedAnalysis,
   confidenceThreshold: number
 ): { verdict: 'normal' | 'abnormal' | 'review'; needHumanReview: boolean } {
-  if (!analysis.abnormal) {
-    return {
-      verdict: analysis.needHumanReview ? 'review' : 'normal',
-      needHumanReview: analysis.needHumanReview
-    }
-  }
-
   const lowConfidence =
-    analysis.confidence !== null && analysis.confidence < confidenceThreshold
-  const missingEvidence = !analysis.evidence
-  const review = analysis.needHumanReview || lowConfidence || missingEvidence
+    analysis.confidence === null || !Number.isFinite(analysis.confidence) ||
+    analysis.confidence < confidenceThreshold || analysis.confidence > 1
+  const missingEvidence = analysis.abnormal && (!analysis.evidence.trim() || analysis.categories.length === 0)
+  const inconsistent = !analysis.abnormal && analysis.categories.length > 0
+  const review = analysis.needHumanReview || lowConfidence || missingEvidence || inconsistent
   return {
-    verdict: review ? 'review' : 'abnormal',
+    verdict: review ? 'review' : analysis.abnormal ? 'abnormal' : 'normal',
     needHumanReview: review
   }
 }

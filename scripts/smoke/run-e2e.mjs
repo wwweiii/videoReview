@@ -43,9 +43,17 @@ const env = {
 delete env.ELECTRON_RUN_AS_NODE
 delete env.ELECTRON_NO_ATTACH_CONSOLE
 
-const child = spawn(electronBinary, [outfile], { cwd: root, stdio: 'inherit', env })
+const child = spawn(electronBinary, [outfile], { cwd: root, stdio: ['ignore', 'pipe', 'inherit'], env })
+let outputTail = ''
+let reported = false
+child.stdout.on('data', (chunk) => {
+  process.stdout.write(chunk)
+  outputTail = (outputTail + chunk.toString('utf8')).slice(-2000)
+  if (outputTail.includes('端到端冒烟：PASS')) reported = true
+})
 child.on('exit', (code) => {
   console.log(`\nElectron 端到端退出码：${code}（耗时 ${((Date.now() - started) / 1000).toFixed(1)}s）`)
   fs.rmSync(dataDir, { recursive: true, force: true })
-  process.exit(code ?? 1)
+  if (!reported) console.error('冒烟未输出完整测试汇总，按失败处理')
+  process.exit(reported ? (code ?? 1) : 1)
 })

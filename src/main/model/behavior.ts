@@ -14,10 +14,7 @@ function normalizeLabel(value: string): string {
 function canonicalBehaviorLabel(raw: string, labels: string[]): string | null {
   const normalized = normalizeLabel(raw)
   if (!normalized) return null
-  return labels.find((label) => {
-    const candidate = normalizeLabel(label)
-    return normalized === candidate || normalized.includes(candidate) || candidate.includes(normalized)
-  }) ?? null
+  return labels.find((label) => normalized === normalizeLabel(label)) ?? null
 }
 
 export function parseBehaviorAnalysis(raw: string, behaviorLabels: string[]): ParsedAnalysis {

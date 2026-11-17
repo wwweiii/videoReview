@@ -1,10 +1,42 @@
-import { BrowserWindow } from 'electron'
+import { app, BrowserWindow, dialog } from 'electron'
 import path from 'node:path'
 import { getWindowIconPath } from '../paths'
 
 let mainWindow: BrowserWindow | null = null
+let closeApproved = false
+let closeTimer: ReturnType<typeof setTimeout> | null = null
+
+export function isWindowCloseApproved(): boolean { return closeApproved }
+
+export function resetWindowClose(): void {
+  closeApproved = false
+  if (closeTimer) clearTimeout(closeTimer)
+  closeTimer = null
+}
+
+/** 先让常驻的设置队列完成保存，再由 before-quit 等待任务落盘。 */
+export function requestWindowClose(): boolean {
+  if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isLoadingMainFrame()) return false
+  if (closeTimer) return true
+  closeTimer = setTimeout(() => {
+    resetWindowClose()
+    dialog.showErrorBox('暂时无法退出', '页面未完成保存，请检查设置保存状态后重试。')
+  }, 10_000)
+  mainWindow.webContents.send('app:beforeClose')
+  return true
+}
+
+export function completeWindowClose(senderId: number, saved: boolean): void {
+  if (senderId !== mainWindow?.webContents.id || !closeTimer) return
+  resetWindowClose()
+  if (saved) {
+    closeApproved = true
+    app.quit()
+  }
+}
 
 export function createWindow(): void {
+  resetWindowClose()
   const iconPath = getWindowIconPath()
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -30,7 +62,12 @@ export function createWindow(): void {
   })
 
   mainWindow.on('closed', () => {
+    resetWindowClose()
     mainWindow = null
+  })
+
+  mainWindow.on('close', (event) => {
+    if (!closeApproved && requestWindowClose()) event.preventDefault()
   })
 
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))

@@ -53,6 +53,7 @@ export async function analyzeFrames(
 
   const worker = async (): Promise<void> => {
     while (!signal.aborted && !fatalError) {
+      if (task.saveError) throw new Error(task.saveError)
       const groupIndex = nextGroup
       nextGroup += 1
       if (groupIndex >= groups.length) return
@@ -67,6 +68,7 @@ export async function analyzeFrames(
             group[0].timestampMs,
             signal
           )
+          if (signal.aborted) return
           applyAnalysis(group[0], analysis, task.config.confidenceThreshold, modelConfig.label)
         } else {
           const groupResult = await analyzeFrameGroup(
@@ -80,6 +82,7 @@ export async function analyzeFrames(
             signal
           )
           const analyses = groupResult.analyses
+          if (signal.aborted) return
           for (const frame of group) {
             const analysis = analyses.get(group.indexOf(frame))
             if (analysis) {
@@ -133,9 +136,11 @@ export async function analyzeFrames(
     }
   }
 
-  await Promise.all(Array.from({ length: concurrency }, () => worker()))
+  const results = await Promise.allSettled(Array.from({ length: concurrency }, () => worker()))
+  const rejected = results.find((result) => result.status === 'rejected')
   if (signal.aborted) throw new Error('任务已取消')
   if (fatalError) throw fatalError
+  if (rejected?.status === 'rejected') throw rejected.reason
 }
 
 function applyAnalysis(
@@ -183,6 +188,10 @@ function updateProgress(task: TaskRecord, counts?: RegionCounts): void {
 export function markUnresolvedFailed(task: TaskRecord, reason: string): void {
   const now = new Date().toISOString()
   for (const frame of taskResults(task)) {
+    if (frame.regionStatus === 'pending') {
+      frame.regionStatus = 'failed'
+      frame.regionError = reason
+    }
     if (frame.status === 'pending' || frame.status === 'analyzing') {
       frame.status = 'failed'
       frame.verdict = 'failed'

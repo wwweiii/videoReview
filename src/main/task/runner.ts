@@ -1,12 +1,14 @@
 import type { TaskRecord } from '@shared/types'
 import type { ResolvedModelConfig } from '../config/model-config'
-import { logger } from '../logger'
 import { extractFrames } from '../media/ffmpeg'
-import { analyzeFrames, markUnresolvedFailed } from './analysis'
-import { clearSummaryThrottle, emitSummary } from './event'
+import { analyzeFrames } from './analysis'
+import { emitSummary } from './event'
 import { createRegionRunner } from './regions'
 import { taskSession } from './session'
 import { flushSave, newFrame } from './store'
+import { failTask, finishTask } from './outcome'
+
+export { finishTask } from './outcome'
 
 export async function runTask(
   task: TaskRecord,
@@ -56,39 +58,13 @@ export async function runTask(
       )
       if (runner) await runner.finish()
     } catch (error) {
-      runner?.abort()
+      await runner?.abort()
       throw error
     }
-    await finishTask(task)
+    if (abortController.signal.aborted) throw new Error('任务已取消')
+    await finishTask(task, abortController.signal)
   } catch (error) {
     const cancelled = abortController.signal.aborted && (run?.cancelRequested ?? false)
-    const message = error instanceof Error ? error.message : String(error)
-    if (cancelled) {
-      task.status = 'cancelled'
-      task.phaseMessage = '已取消'
-      task.errorMessage = ''
-      markUnresolvedFailed(task, '任务已取消')
-    } else {
-      task.status = 'failed'
-      task.phaseMessage = '任务失败'
-      task.errorMessage = message
-      markUnresolvedFailed(task, message)
-      logger.error('任务失败', error)
-    }
-    await flushSave(task)
-    emitSummary(task, true)
-  } finally {
-    taskSession.activeRuns.delete(task.id)
-    clearSummaryThrottle(task.id)
+    await failTask(task, error, cancelled)
   }
-}
-
-export async function finishTask(task: TaskRecord): Promise<void> {
-  const failedCount = task.frames.filter((frame) => frame.status === 'failed').length
-  task.status = failedCount > 0 ? 'completed_with_errors' : 'completed'
-  task.progress = 100
-  task.phaseMessage = '已完成'
-  task.errorMessage = ''
-  await flushSave(task)
-  emitSummary(task, true)
 }

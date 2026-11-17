@@ -14,6 +14,7 @@ export function buildSummary(task: TaskRecord): TaskSummary {
   }
 
   return {
+    saveError: task.saveError || '',
     id: task.id,
     kind: task.kind ?? 'items',
     name: task.name,

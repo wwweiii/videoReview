@@ -72,6 +72,7 @@ async function probeOnce(
     )
     secondText = second.content
   } catch (error) {
+    if (signal?.aborted) throw error
     logger.warn('半尺寸探针请求失败', error)
   }
   return {
@@ -100,11 +101,13 @@ export async function probeModelConfig(
         retryScore: retry.evaluation.score
       })
     } catch (error) {
+      if (signal?.aborted) throw error
       logger.warn('探针重试失败', error)
     }
   }
 
   const evaluation = attempt.evaluation
+  if (signal?.aborted) throw new Error('探测已取消')
   const existing = getProfile(config)
 
   // 之前能定位、这次没通过 → 不降级，沿用旧档案（避免用户点一次探测就把功能弄坏）

@@ -32,4 +32,6 @@ export interface FramelensApi {
   probeModel(input: TestModelInput): Promise<ModelProbeResult>
   getPathForFile(file: File): string
   onTaskEvent(callback: (event: TaskEvent) => void): () => void
+  onBeforeClose(callback: () => void): () => void
+  completeClose(saved: boolean): void
 }

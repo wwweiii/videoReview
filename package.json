@@ -18,8 +18,9 @@
     "clean": "node scripts/clean.mjs",
     "encrypt-preset": "node scripts/encrypt-preset.mjs",
     "verify:localization": "node scripts/verify-localization.mjs",
-    "smoke:localization": "node scripts/smoke/run-e2e.mjs",
-    "verify": "npm run typecheck && npm run verify:localization && npm run smoke:localization"
+    "smoke:localization": "electron-vite build && node scripts/smoke/run-e2e.mjs",
+    "verify:reliability": "node scripts/verify-reliability.mjs",
+    "verify": "npm run typecheck && npm run verify:reliability && npm run verify:localization && npm run smoke:localization"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",

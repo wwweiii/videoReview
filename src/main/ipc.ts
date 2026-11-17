@@ -11,6 +11,7 @@ import { getResolvedModelConfigForTesting } from './config/model-config'
 import { getPublicSettings, saveSettings } from './config/settings'
 import { probeModelConfig } from './localization/probe'
 import { testModelConnection } from './model/client'
+import { completeWindowClose } from './app/window'
 import {
   cancelActiveTask,
   deleteTask,
@@ -24,6 +25,11 @@ import {
 } from './task/manager'
 
 export function registerIpcHandlers(): void {
+  ipcMain.on('app:closeReady', (event, saved: unknown) => {
+    if (event.senderFrame === event.sender.mainFrame && typeof saved === 'boolean') {
+      completeWindowClose(event.sender.id, saved)
+    }
+  })
   ipcMain.handle('app:bootstrap', (): BootstrapData => ({
     settings: getPublicSettings(),
     tasks: listTasks()
@@ -53,7 +59,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('task:retryFailed', async (_event, taskId: string) => retryFailedFrames(taskId))
   ipcMain.handle('task:relocalize', async (_event, taskId: string) => relocalizeTask(taskId))
   ipcMain.handle('task:delete', async (_event, taskId: string): Promise<DeleteTaskResult> => {
-    deleteTask(taskId)
+    await deleteTask(taskId)
     return { deleted: true }
   })
   ipcMain.handle('task:exportCsv', async (event, taskId: string) => {

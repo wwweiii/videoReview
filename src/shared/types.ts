@@ -149,6 +149,8 @@ export interface FrameRecord {
 }
 
 export interface TaskRecord {
+  /** 当前会话的落盘错误；恢复保存后清空。 */
+  saveError?: string
   id: string
   /** 旧任务未设置时按物品识别处理。 */
   kind?: TaskKind
@@ -169,6 +171,7 @@ export interface TaskRecord {
 }
 
 export interface TaskSummary {
+  saveError?: string
   id: string
   kind?: TaskKind
   name: string
@@ -249,6 +252,8 @@ export interface CustomModelInput {
 }
 
 export interface SaveSettingsInput {
+  /** 按设置分区保存，省略时兼容完整设置写入。 */
+  section?: 'items' | 'behavior' | 'model'
   modelMode: ModelMode
   customModel: CustomModelInput
   developerMode: boolean
