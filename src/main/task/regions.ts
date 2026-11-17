@@ -1,4 +1,5 @@
 import path from 'node:path'
+import { normalizeJudgmentImage } from '@shared/image'
 import type { FrameRecord, RegionStatus, TaskRecord } from '@shared/types'
 import type { ModelProfile } from '@shared/localization/profile'
 import type { ResolvedModelConfig } from '../config/model-config'
@@ -10,6 +11,7 @@ import { FatalModelError } from '../model/client'
 import { getTaskDir } from '../paths'
 import { emitFrame, emitSummary } from './event'
 import { flushSave, scheduleSave } from './store'
+import { getTaskStats, updateResultStats } from './stats'
 
 interface LocalizeRunOptions {
   /** true = 只跑定位（重定位），进度只按定位帧计算 */
@@ -94,6 +96,7 @@ export function createRegionRunner(
     frame.regionStatus = status
     frame.regionError = reason
     if (modelConfig.label) frame.regionModel = modelConfig.label
+    updateResultStats(task, frame)
   }
 
   function failRest(reason: string, status: RegionStatus): void {
@@ -105,16 +108,15 @@ export function createRegionRunner(
     scheduleSave(task)
   }
 
-  function bumpProgress(): void {
+  function bumpProgress(frame: FrameRecord): void {
+    updateResultStats(task, frame)
     if (onlyLocalize) {
       task.progress = planned > 0 ? Math.round((located / planned) * 1000) / 10 : 0
       task.phaseMessage = `正在定位违禁物 ${located}/${Math.max(planned, 1)}`
       return
     }
     const total = task.frames.length
-    const processed = task.frames.filter(
-      (frame) => frame.status === 'completed' || frame.status === 'failed'
-    ).length
+    const processed = getTaskStats(task).processed
     const totalWork = total + Math.max(planned, 1)
     const computed = Math.round(((processed + located) / totalWork) * 1000) / 10
     task.progress = Math.min(99, Math.max(task.progress, computed))
@@ -131,7 +133,7 @@ export function createRegionRunner(
       stopped = true
       failRest(profileError || '当前模型不支持位置输出', 'unsupported')
       markFrame(frame, 'unsupported', profileError || '当前模型不支持位置输出')
-      bumpProgress()
+      bumpProgress(frame)
       emitFrame(task, frame)
       scheduleSave(task)
       return
@@ -144,6 +146,7 @@ export function createRegionRunner(
         {
           framePath: path.join(getTaskDir(task.id), 'frames', frame.fileName),
           timestampMs: frame.timestampMs,
+          imageScalePercent: normalizeJudgmentImage(task.config.judgmentImage).scalePercent,
           itemIds: task.config.prohibitedItems,
           customItems: task.config.customProhibitedItems,
           focusCategories: frame.categories
@@ -195,7 +198,7 @@ export function createRegionRunner(
       status: frame.regionStatus,
       elapsedMs: Date.now() - startedAt
     })
-    bumpProgress()
+    bumpProgress(frame)
     emitFrame(task, frame)
     scheduleSave(task)
   }
@@ -228,6 +231,7 @@ export function createRegionRunner(
       frame.regionLevel = 'L0'
       frame.regionError = ''
       frame.regionRaw = ''
+      updateResultStats(task, frame)
       if (stopped) {
         markFrame(frame, profileError ? 'unsupported' : 'failed', profileError || '定位阶段已中止')
         emitFrame(task, frame)

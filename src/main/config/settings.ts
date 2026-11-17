@@ -2,23 +2,27 @@ import { safeStorage } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import {
-  DEFAULT_BEHAVIOR_FPS,
-  DEFAULT_BEHAVIOR_STRIDE_SEC,
-  DEFAULT_BEHAVIOR_WINDOW_SEC,
+  DEFAULT_ANALYSIS_MODE,
+  DEFAULT_BEHAVIOR_IMAGE_SCALE_PERCENT,
+  DEFAULT_BEHAVIOR_ITEMS,
   DEFAULT_CONCURRENCY,
   DEFAULT_CONFIDENCE_THRESHOLD,
+  DEFAULT_CUSTOM_MODEL,
+  DEFAULT_CUSTOM_PROHIBITED_ITEMS,
+  DEFAULT_DEVELOPER_MODE,
   DEFAULT_GROUP_SIZE,
-  DEFAULT_IMAGE_MAX_EDGE,
   DEFAULT_INTERVAL_SEC,
   DEFAULT_LOCALIZE,
-  DEFAULT_MAX_TOKENS,
-  DEFAULT_TIMEOUT_SEC
+  DEFAULT_MODEL_MODE,
+  DEFAULT_MODEL_RUNTIME,
+  DEFAULT_TIMEOUT_SEC,
+  MAX_GROUP_SIZE,
+  MIN_GROUP_SIZE
 } from '@shared/defaults'
 import { clampNumber, normalizeInterval } from '@shared/format'
-import { DEFAULT_PROHIBITED_ITEMS, normalizeCustomItems } from '@shared/items'
+import { DEFAULT_PROHIBITED_ITEMS, normalizeCustomItems, normalizeSelectedItems } from '@shared/items'
 import { normalizeBehaviorItems, normalizeBehaviorSampling } from '@shared/behavior'
 import type { BoxOrder, CoordinateSpace, ParseDialect } from '@shared/localization/profile'
-import type { PromptLanguage } from '@shared/localization/prompts'
 import type {
   AnalysisConfig,
   AnalysisMode,
@@ -31,6 +35,8 @@ import type {
   SaveSettingsInput
 } from '@shared/types'
 import { logger } from '../logger'
+import { modelScheduler } from '../runtime/scheduler'
+import { normalizeImageScalePercent, normalizeJudgmentImage, type JudgmentImageOptions } from '@shared/image'
 import { getSettingsPath } from '../paths'
 import { getPresetConfig, isPresetAvailable } from './preset'
 
@@ -43,16 +49,14 @@ export interface StoredCustomModel {
   timeoutSec: number
   extraHeaders: string
   extraBody: string
-  maxTokens: number
-  imageMaxEdge: number
-  imageFormat: 'png' | 'jpeg'
-  promptLanguage: PromptLanguage
   coordinateSpaceOverride: 'auto' | CoordinateSpace
   boxOrderOverride: 'auto' | BoxOrder
   parseDialectOverride: 'auto' | ParseDialect
 }
 
 export interface StoredSettings {
+  requestConcurrency: number
+  judgmentImage: JudgmentImageOptions
   modelMode: ModelMode
   customModel: StoredCustomModel
   developerMode: boolean
@@ -70,85 +74,58 @@ export interface StoredSettings {
   behaviorStrideSec: number
   /** 行为识别每秒采样帧数 */
   behaviorFps: number
+  behaviorImageScalePercent: number
 }
 
-export const DEFAULT_MODEL_RUNTIME: Pick<
-  StoredCustomModel,
-  | 'extraBody'
-  | 'maxTokens'
-  | 'imageMaxEdge'
-  | 'imageFormat'
-  | 'promptLanguage'
-  | 'coordinateSpaceOverride'
-  | 'boxOrderOverride'
-  | 'parseDialectOverride'
-> = {
-  extraBody: '',
-  maxTokens: DEFAULT_MAX_TOKENS,
-  imageMaxEdge: DEFAULT_IMAGE_MAX_EDGE,
-  imageFormat: 'png',
-  promptLanguage: 'zh',
-  coordinateSpaceOverride: 'auto',
-  boxOrderOverride: 'auto',
-  parseDialectOverride: 'auto'
-}
+export { DEFAULT_MODEL_RUNTIME } from '@shared/defaults'
 
 let cachedSettings: StoredSettings | null = null
 
 function defaultStoredSettings(): StoredSettings {
   const preset = getPresetConfig()
   const presetDefaults = preset?.defaults ?? {}
+  const customItems = normalizeCustomItems(DEFAULT_CUSTOM_PROHIBITED_ITEMS)
+  const behaviorSampling = normalizeBehaviorSampling()
   return {
-    modelMode: preset ? 'preset' : 'custom',
-    developerMode: false,
+    requestConcurrency: Math.round(clampNumber(preset?.concurrency ?? DEFAULT_CONCURRENCY, 1, 8)),
+    judgmentImage: normalizeJudgmentImage({ scalePercent: presetDefaults.itemImageScalePercent }),
+    modelMode: DEFAULT_MODEL_MODE === 'auto'
+      ? (preset ? 'preset' : 'custom')
+      : DEFAULT_MODEL_MODE === 'preset' && !preset ? 'custom' : DEFAULT_MODEL_MODE,
+    developerMode: DEFAULT_DEVELOPER_MODE,
     customModel: {
-      baseUrl: '',
-      model: '',
+      baseUrl: DEFAULT_CUSTOM_MODEL.baseUrl.trim(),
+      model: DEFAULT_CUSTOM_MODEL.model.trim(),
+      ...protectApiKey(DEFAULT_CUSTOM_MODEL.apiKey.trim()),
       concurrency: DEFAULT_CONCURRENCY,
-      timeoutSec: DEFAULT_TIMEOUT_SEC,
-      extraHeaders: '',
-      ...DEFAULT_MODEL_RUNTIME
+      timeoutSec: Math.round(clampNumber(DEFAULT_TIMEOUT_SEC, 15, 600)),
+      extraHeaders: DEFAULT_CUSTOM_MODEL.extraHeaders,
+      ...normalizeRuntimeModel(DEFAULT_MODEL_RUNTIME)
     },
     intervalSec: normalizeInterval(presetDefaults.intervalSec ?? DEFAULT_INTERVAL_SEC),
-    // 内置四项固定包含；自定义物品默认为空
-    prohibitedItems: [...DEFAULT_PROHIBITED_ITEMS],
-    customProhibitedItems: [],
-    analysisMode: presetDefaults.analysisMode === 'group' ? 'group' : 'single',
-    groupSize: Math.round(clampNumber(presetDefaults.groupSize ?? DEFAULT_GROUP_SIZE, 2, 8)),
+    prohibitedItems: normalizeSelectedItems([...DEFAULT_PROHIBITED_ITEMS, ...customItems.map((item) => item.id)], customItems),
+    customProhibitedItems: customItems,
+    analysisMode: presetDefaults.analysisMode ?? DEFAULT_ANALYSIS_MODE,
+    groupSize: Math.round(clampNumber(presetDefaults.groupSize ?? DEFAULT_GROUP_SIZE, MIN_GROUP_SIZE, MAX_GROUP_SIZE)),
     confidenceThreshold: clampNumber(
       presetDefaults.confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD,
       0,
       1
     ),
     localize: presetDefaults.localize ?? DEFAULT_LOCALIZE,
-    behaviorItems: [],
-    behaviorWindowSec: DEFAULT_BEHAVIOR_WINDOW_SEC,
-    behaviorStrideSec: DEFAULT_BEHAVIOR_STRIDE_SEC,
-    behaviorFps: DEFAULT_BEHAVIOR_FPS
+    behaviorItems: normalizeBehaviorItems(DEFAULT_BEHAVIOR_ITEMS),
+    behaviorWindowSec: behaviorSampling.windowSec,
+    behaviorStrideSec: behaviorSampling.strideSec,
+    behaviorFps: behaviorSampling.fps,
+    behaviorImageScalePercent: normalizeImageScalePercent(
+      presetDefaults.behaviorImageScalePercent ?? preset?.imageScalePercent ?? DEFAULT_BEHAVIOR_IMAGE_SCALE_PERCENT
+    )
   }
-}
-
-/** 内置物品固定包含，自定义物品只能从自定义列表里选 */
-function normalizeSelectedItems(
-  rawSelected: unknown,
-  customItems: CustomProhibitedItem[]
-): string[] {
-  const customIds = new Set(customItems.map((item) => item.id))
-  const selected = Array.isArray(rawSelected)
-    ? rawSelected.filter(
-        (id): id is string => typeof id === 'string' && customIds.has(id)
-      )
-    : []
-  return [...DEFAULT_PROHIBITED_ITEMS, ...Array.from(new Set(selected))]
 }
 
 type RuntimeModelFields = Pick<
   StoredCustomModel,
   | 'extraBody'
-  | 'maxTokens'
-  | 'imageMaxEdge'
-  | 'imageFormat'
-  | 'promptLanguage'
   | 'coordinateSpaceOverride'
   | 'boxOrderOverride'
   | 'parseDialectOverride'
@@ -159,42 +136,42 @@ export function normalizeRuntimeModel(
 ): RuntimeModelFields {
   const raw = source ?? {}
   return {
-    extraBody: typeof raw.extraBody === 'string' ? raw.extraBody : '',
-    maxTokens: Math.round(clampNumber(Number(raw.maxTokens) || DEFAULT_MAX_TOKENS, 128, 32768)),
-    imageMaxEdge: Math.round(
-      clampNumber(
-        raw.imageMaxEdge === undefined ? DEFAULT_IMAGE_MAX_EDGE : Number(raw.imageMaxEdge),
-        0,
-        4096
-      )
-    ),
-    imageFormat: raw.imageFormat === 'jpeg' ? 'jpeg' : 'png',
-    promptLanguage: raw.promptLanguage === 'en' ? 'en' : 'zh',
+    extraBody: typeof raw.extraBody === 'string' ? raw.extraBody : DEFAULT_MODEL_RUNTIME.extraBody,
     coordinateSpaceOverride: normalizeSpaceOverride(raw.coordinateSpaceOverride),
     boxOrderOverride:
-      raw.boxOrderOverride === 'yxyx' || raw.boxOrderOverride === 'xyxy'
+      raw.boxOrderOverride === 'auto' || raw.boxOrderOverride === 'yxyx' || raw.boxOrderOverride === 'xyxy'
         ? raw.boxOrderOverride
-        : 'auto',
+        : DEFAULT_MODEL_RUNTIME.boxOrderOverride,
     parseDialectOverride: normalizeDialectOverride(raw.parseDialectOverride)
   }
 }
 
-function normalizeStored(raw: Partial<StoredSettings>): StoredSettings {
+type LegacyStoredSettings = Partial<Omit<StoredSettings, 'customModel'>> & {
+  customModel?: StoredCustomModel & { imageScalePercent?: number }
+}
+
+function normalizeStored(raw: LegacyStoredSettings): StoredSettings {
   const defaults = defaultStoredSettings()
   const custom = raw.customModel ?? defaults.customModel
-  const customItems = normalizeCustomItems(raw.customProhibitedItems)
+  const customItems = normalizeCustomItems(raw.customProhibitedItems ?? defaults.customProhibitedItems)
   const behaviorSampling = normalizeBehaviorSampling({
     windowSec: raw.behaviorWindowSec,
     strideSec: raw.behaviorStrideSec,
     fps: raw.behaviorFps
   })
+  const confidenceThreshold = Number(raw.confidenceThreshold ?? defaults.confidenceThreshold)
   return {
+    requestConcurrency: Math.round(clampNumber(
+      Number(raw.requestConcurrency ?? (raw.modelMode === 'custom' ? custom.concurrency : defaults.requestConcurrency)) || defaults.requestConcurrency,
+      1, 8
+    )),
+    judgmentImage: normalizeJudgmentImage(raw.judgmentImage ?? defaults.judgmentImage),
     modelMode:
       raw.modelMode === 'preset' || raw.modelMode === 'custom' ? raw.modelMode : defaults.modelMode,
     developerMode: typeof raw.developerMode === 'boolean' ? raw.developerMode : defaults.developerMode,
     customModel: {
-      baseUrl: typeof custom.baseUrl === 'string' ? custom.baseUrl : '',
-      model: typeof custom.model === 'string' ? custom.model : '',
+      baseUrl: typeof custom.baseUrl === 'string' ? custom.baseUrl : defaults.customModel.baseUrl,
+      model: typeof custom.model === 'string' ? custom.model : defaults.customModel.model,
       apiKeyEncrypted:
         typeof custom.apiKeyEncrypted === 'string' ? custom.apiKeyEncrypted : undefined,
       apiKeyPlain: typeof custom.apiKeyPlain === 'string' ? custom.apiKeyPlain : undefined,
@@ -202,44 +179,52 @@ function normalizeStored(raw: Partial<StoredSettings>): StoredSettings {
         clampNumber(Number(custom.concurrency) || DEFAULT_CONCURRENCY, 1, 8)
       ),
       timeoutSec: Math.round(clampNumber(Number(custom.timeoutSec) || DEFAULT_TIMEOUT_SEC, 15, 600)),
-      extraHeaders: typeof custom.extraHeaders === 'string' ? custom.extraHeaders : '',
+      extraHeaders: typeof custom.extraHeaders === 'string' ? custom.extraHeaders : defaults.customModel.extraHeaders,
       ...normalizeRuntimeModel(custom)
     },
-    intervalSec: normalizeInterval(Number(raw.intervalSec) || DEFAULT_INTERVAL_SEC),
+    intervalSec: normalizeInterval(Number(raw.intervalSec ?? defaults.intervalSec) || defaults.intervalSec),
     customProhibitedItems: customItems,
-    prohibitedItems: normalizeSelectedItems(raw.prohibitedItems, customItems),
-    analysisMode: raw.analysisMode === 'group' ? 'group' : 'single',
-    groupSize: Math.round(clampNumber(Number(raw.groupSize) || DEFAULT_GROUP_SIZE, 2, 8)),
+    prohibitedItems: normalizeSelectedItems(raw.prohibitedItems ?? defaults.prohibitedItems, customItems),
+    analysisMode: raw.analysisMode === 'group' || raw.analysisMode === 'single' ? raw.analysisMode : defaults.analysisMode,
+    groupSize: Math.round(clampNumber(Number(raw.groupSize ?? defaults.groupSize) || defaults.groupSize, MIN_GROUP_SIZE, MAX_GROUP_SIZE)),
     confidenceThreshold: clampNumber(
-      Number(raw.confidenceThreshold) || DEFAULT_CONFIDENCE_THRESHOLD,
+      Number.isFinite(confidenceThreshold) ? confidenceThreshold : defaults.confidenceThreshold,
       0,
       1
     ),
     localize: typeof raw.localize === 'boolean' ? raw.localize : defaults.localize,
-    behaviorItems: normalizeBehaviorItems(raw.behaviorItems),
+    behaviorItems: normalizeBehaviorItems(raw.behaviorItems ?? defaults.behaviorItems),
     behaviorWindowSec: behaviorSampling.windowSec,
     behaviorStrideSec: behaviorSampling.strideSec,
-    behaviorFps: behaviorSampling.fps
+    behaviorFps: behaviorSampling.fps,
+    // 旧共用比例迁入行为设置；物品定位改为跟随原判定比例。
+    behaviorImageScalePercent: normalizeImageScalePercent(raw.behaviorImageScalePercent ?? (
+      (raw.modelMode ?? defaults.modelMode) === 'preset'
+        ? defaults.behaviorImageScalePercent
+        : raw.customModel?.imageScalePercent ?? defaults.behaviorImageScalePercent
+    ))
   }
 }
 
 function normalizeSpaceOverride(value: unknown): 'auto' | CoordinateSpace {
-  return value === 'normalized_1000' ||
+  return value === 'auto' ||
+    value === 'normalized_1000' ||
     value === 'normalized_100' ||
     value === 'normalized_01' ||
     value === 'absolute_px'
     ? value
-    : 'auto'
+    : DEFAULT_MODEL_RUNTIME.coordinateSpaceOverride
 }
 
 function normalizeDialectOverride(value: unknown): 'auto' | ParseDialect {
-  return value === 'json_multi' ||
+  return value === 'auto' ||
+    value === 'json_multi' ||
     value === 'box_tokens' ||
     value === 'loc_bins' ||
     value === 'plain_coords' ||
     value === 'none'
     ? value
-    : 'auto'
+    : DEFAULT_MODEL_RUNTIME.parseDialectOverride
 }
 
 export function loadSettings(): StoredSettings {
@@ -247,7 +232,7 @@ export function loadSettings(): StoredSettings {
   try {
     if (fs.existsSync(getSettingsPath())) {
       cachedSettings = normalizeStored(
-        JSON.parse(fs.readFileSync(getSettingsPath(), 'utf8')) as Partial<StoredSettings>
+        JSON.parse(fs.readFileSync(getSettingsPath(), 'utf8')) as LegacyStoredSettings
       )
     } else {
       cachedSettings = defaultStoredSettings()
@@ -321,6 +306,8 @@ function persistSettings(settings: StoredSettings): void {
 export function getPublicSettings(): PublicSettings {
   const stored = loadSettings()
   return {
+    requestConcurrency: stored.requestConcurrency,
+    judgmentImage: { ...stored.judgmentImage },
     modelMode: stored.modelMode,
     presetAvailable: isPresetAvailable(),
     developerMode: stored.developerMode,
@@ -329,10 +316,6 @@ export function getPublicSettings(): PublicSettings {
       model: stored.customModel.model,
       hasApiKey: Boolean(readSavedApiKey(stored.customModel)),
       extraBody: stored.customModel.extraBody,
-      maxTokens: stored.customModel.maxTokens,
-      imageMaxEdge: stored.customModel.imageMaxEdge,
-      imageFormat: stored.customModel.imageFormat,
-      promptLanguage: stored.customModel.promptLanguage,
       coordinateSpaceOverride: stored.customModel.coordinateSpaceOverride,
       boxOrderOverride: stored.customModel.boxOrderOverride,
       parseDialectOverride: stored.customModel.parseDialectOverride
@@ -346,7 +329,8 @@ export function getPublicSettings(): PublicSettings {
     behaviorItems: stored.behaviorItems.map((item) => ({ ...item })),
     behaviorWindowSec: stored.behaviorWindowSec,
     behaviorStrideSec: stored.behaviorStrideSec,
-    behaviorFps: stored.behaviorFps
+    behaviorFps: stored.behaviorFps,
+    behaviorImageScalePercent: stored.behaviorImageScalePercent
   }
 }
 
@@ -357,6 +341,7 @@ export function getBehaviorConfig(): BehaviorAnalysisConfig {
     windowSec: stored.behaviorWindowSec,
     strideSec: stored.behaviorStrideSec,
     fps: stored.behaviorFps,
+    imageScalePercent: stored.behaviorImageScalePercent,
     behaviors: stored.behaviorItems.map((item) => item.label)
   }
 }
@@ -364,6 +349,7 @@ export function getBehaviorConfig(): BehaviorAnalysisConfig {
 export function getAnalysisConfig(): AnalysisConfig {
   const stored = loadSettings()
   return {
+    judgmentImage: { ...stored.judgmentImage },
     intervalSec: stored.intervalSec,
     prohibitedItems: [...stored.prohibitedItems],
     customProhibitedItems: stored.customProhibitedItems.map((item) => ({ ...item })),
@@ -381,14 +367,6 @@ export function applyRuntimeOverrides(
 ): RuntimeModelFields {
   const merged: Partial<StoredCustomModel> = { ...base }
   if (typeof input.extraBody === 'string') merged.extraBody = input.extraBody
-  if (input.maxTokens !== undefined) merged.maxTokens = input.maxTokens
-  if (input.imageMaxEdge !== undefined) merged.imageMaxEdge = input.imageMaxEdge
-  if (input.imageFormat === 'png' || input.imageFormat === 'jpeg') {
-    merged.imageFormat = input.imageFormat
-  }
-  if (input.promptLanguage === 'zh' || input.promptLanguage === 'en') {
-    merged.promptLanguage = input.promptLanguage
-  }
   if (input.coordinateSpaceOverride !== undefined) {
     merged.coordinateSpaceOverride = normalizeSpaceOverride(input.coordinateSpaceOverride)
   }
@@ -416,7 +394,7 @@ export function saveSettings(input: SaveSettingsInput): PublicSettings {
     throw new Error('预设模型不可用')
   }
   if (saveModel && input.modelMode === 'custom') validateCustomModel(input.customModel)
-  if (saveModel && input.customModel.extraBody?.trim()) {
+  if (saveModel && input.developerMode && input.modelMode === 'custom' && input.customModel.extraBody?.trim()) {
     let value: unknown
     try {
       value = JSON.parse(input.customModel.extraBody)
@@ -438,7 +416,7 @@ export function saveSettings(input: SaveSettingsInput): PublicSettings {
         model: input.customModel.model.trim(),
         ...applyRuntimeOverrides(input.customModel, current.customModel)
       }
-    : current.customModel
+    : { ...current.customModel }
 
   if (saveModel && input.customModel.apiKey?.trim()) {
     delete nextCustom.apiKeyPlain
@@ -452,11 +430,16 @@ export function saveSettings(input: SaveSettingsInput): PublicSettings {
   })
   const next: StoredSettings = {
     ...current,
+    customModel: nextCustom,
     ...(saveModel
-      ? { modelMode: input.modelMode, developerMode: Boolean(input.developerMode), customModel: nextCustom }
+      ? {
+          modelMode: input.modelMode, developerMode: Boolean(input.developerMode),
+          requestConcurrency: Math.round(clampNumber(Number(input.requestConcurrency) || current.requestConcurrency, 1, 8))
+        }
       : {}),
     ...(saveItems
       ? {
+          judgmentImage: normalizeJudgmentImage(input.judgmentImage ?? current.judgmentImage),
           intervalSec: normalizeInterval(input.intervalSec),
           prohibitedItems: selectedItems,
           customProhibitedItems: customItems,
@@ -470,11 +453,13 @@ export function saveSettings(input: SaveSettingsInput): PublicSettings {
           behaviorItems: normalizeBehaviorItems(input.behaviorItems),
           behaviorWindowSec: behaviorSampling.windowSec,
           behaviorStrideSec: behaviorSampling.strideSec,
-          behaviorFps: behaviorSampling.fps
+          behaviorFps: behaviorSampling.fps,
+          behaviorImageScalePercent: normalizeImageScalePercent(input.behaviorImageScalePercent ?? current.behaviorImageScalePercent)
         }
       : {})
   }
   persistSettings(next)
   cachedSettings = next
+  modelScheduler.setLimit(next.requestConcurrency)
   return getPublicSettings()
 }

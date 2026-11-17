@@ -53,7 +53,7 @@ export function FrameTable({
         .toLowerCase()
         .includes(keyword)
     })
-  }, [task, filter, query])
+  }, [task.frames, filter, query])
 
   const totalPages = Math.max(1, Math.ceil(filteredFrames.length / PAGE_SIZE))
   const safePage = Math.min(page, totalPages)

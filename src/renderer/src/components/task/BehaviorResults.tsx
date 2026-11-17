@@ -5,21 +5,19 @@ import { countFrameStats, isTaskActive } from '@shared/task'
 import type { BehaviorWindowRecord, TaskRecord, Verdict } from '@shared/types'
 import { frameImageUrl } from '../../lib/ui'
 import { VerdictBadge } from '../common/StatusBadge'
-import { CallTraceDrawer } from './CallTraceDrawer'
 
 const PAGE_SIZE = 10
 
-export function BehaviorResults({ task, onRefresh, developerMode }: {
+export function BehaviorResults({ task, onRefresh }: {
   task: TaskRecord
   onRefresh: () => Promise<void>
-  developerMode: boolean
 }): JSX.Element {
   const [filter, setFilter] = useState<'all' | Verdict>('all')
   const [query, setQuery] = useState('')
   const [page, setPage] = useState(1)
   const [selected, setSelected] = useState<number | null>(null)
   const windows = task.behaviorWindows ?? []
-  const stats = countFrameStats(windows)
+  const stats = task.stats ?? countFrameStats(windows)
   useEffect(() => { setPage(1) }, [filter, query, task.id])
   const filtered = useMemo(() => windows.filter((window) => {
     if (filter !== 'all' && window.verdict !== filter) return false
@@ -86,17 +84,15 @@ export function BehaviorResults({ task, onRefresh, developerMode }: {
       </>}
     </section>
     {selectedWindow ? <BehaviorPreview key={task.id} task={task} window={selectedWindow}
-      developerMode={developerMode}
       onClose={() => setSelected(null)}
       onPrevious={selectedWindow.index > 0 ? () => setSelected(selectedWindow.index - 1) : undefined}
       onNext={selectedWindow.index < windows.length - 1 ? () => setSelected(selectedWindow.index + 1) : undefined} /> : null}
   </>
 }
 
-function BehaviorPreview({ task, window: segment, developerMode, onClose, onPrevious, onNext }: {
+function BehaviorPreview({ task, window: segment, onClose, onPrevious, onNext }: {
   task: TaskRecord
   window: BehaviorWindowRecord
-  developerMode: boolean
   onClose: () => void
   onPrevious?: () => void
   onNext?: () => void
@@ -105,7 +101,6 @@ function BehaviorPreview({ task, window: segment, developerMode, onClose, onPrev
   const closeButton = useRef<HTMLButtonElement>(null)
   const [videoError, setVideoError] = useState(false)
   const [sampleIndex, setSampleIndex] = useState(0)
-  const [traceOpen, setTraceOpen] = useState(false)
   useEffect(() => {
     const previousFocus = document.activeElement as HTMLElement | null
     closeButton.current?.focus()
@@ -113,7 +108,6 @@ function BehaviorPreview({ task, window: segment, developerMode, onClose, onPrev
   }, [])
   useEffect(() => {
     setSampleIndex(0)
-    setTraceOpen(false)
     const video = player.current
     if (video && video.readyState >= 1) {
       video.pause()
@@ -182,11 +176,8 @@ function BehaviorPreview({ task, window: segment, developerMode, onClose, onPrev
         <section className="drawer-section"><h3>行为说明</h3><p>{segment.description || (segment.verdict === 'normal' ? '未发现设置中的指定行为。' : '暂无说明')}</p></section>
         <section className="drawer-section"><h3>可见证据</h3><p>{segment.evidence || '暂无证据'}</p></section>
         {segment.error ? <p className="frame-error">{segment.error}</p> : null}
-        {developerMode ? <div className="drawer-trace-action">
-          <button type="button" className="button button-secondary" onClick={() => setTraceOpen(true)}>调用轨迹</button>
-        </div> : null}
+
       </div>
     </section>
-    {developerMode && traceOpen ? <CallTraceDrawer traces={segment.callTraces ?? []} onClose={() => setTraceOpen(false)} /> : null}
   </div>
 }

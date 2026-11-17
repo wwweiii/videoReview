@@ -1,16 +1,24 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { DEFAULT_PROHIBITED_ITEMS } from '@shared/items'
-import type { FrameRecord, TaskRecord } from '@shared/types'
+import type { FrameRecord, TaskRecord, TaskSummary } from '@shared/types'
+import { isTaskActive } from '@shared/task'
 import { logger } from '../logger'
 import { getTaskDir, getTaskFilePath, getTasksDir, isTaskId } from '../paths'
 import { emitSummary } from './event'
+import { prepareTaskSnapshot } from './diagnostics'
+import { buildSummary } from './summary'
+import { clearImageCache } from '../media/images'
 
 const taskCache = new Map<string, TaskRecord>()
 const saveTimers = new Map<string, NodeJS.Timeout>()
 const saveChains = new Map<string, Promise<void>>()
 const dirtySince = new Map<string, number>()
 const dirtyTasks = new Set<TaskRecord>()
+const cacheSizes = new Map<string, number>()
+const summaryCache = new Map<string, { mtimeMs: number; size: number; summary: TaskSummary }>()
+const MAX_CACHED_TASKS = 8
+const MAX_CACHE_BYTES = 32 * 1024 * 1024
 const SAVE_DELAY_MS = 700
 const MAX_SAVE_WAIT_MS = 2000
 
@@ -75,7 +83,7 @@ function normalizeTask(raw: TaskRecord): TaskRecord {
     config: {
       ...(raw.config as TaskRecord['config']),
       prohibitedItems:
-        Array.isArray(rawConfig.prohibitedItems) && rawConfig.prohibitedItems.length > 0
+        Array.isArray(rawConfig.prohibitedItems)
           ? rawConfig.prohibitedItems
           : [...DEFAULT_PROHIBITED_ITEMS],
       customProhibitedItems: Array.isArray(rawConfig.customProhibitedItems)
@@ -97,12 +105,15 @@ export function validateTaskId(taskId: string): void {
 export function readTask(taskId: string): TaskRecord | null {
   validateTaskId(taskId)
   const cached = taskCache.get(taskId)
-  if (cached) return cached
+  if (cached) { taskCache.delete(taskId); taskCache.set(taskId, cached); return cached }
   const filePath = getTaskFilePath(taskId)
   if (!fs.existsSync(filePath)) return null
   try {
-    const task = normalizeTask(JSON.parse(fs.readFileSync(filePath, 'utf8')) as TaskRecord)
+    const json = fs.readFileSync(filePath, 'utf8')
+    const task = normalizeTask(JSON.parse(json) as TaskRecord)
     taskCache.set(task.id, task)
+    cacheSizes.set(task.id, Buffer.byteLength(json))
+    trimTaskCache()
     return task
   } catch (error) {
     logger.error('读取任务失败', error)
@@ -117,12 +128,26 @@ function writeTaskNow(task: TaskRecord, snapshot?: Partial<TaskRecord>): Promise
     .catch(() => undefined)
     .then(async () => {
       // 在串行队列执行时获取最新状态；序列化失败也走统一错误路径。
-      const json = JSON.stringify({ ...task, ...snapshot, saveError: '' })
+      const prepared = await prepareTaskSnapshot(task, snapshot)
+      const json = JSON.stringify(prepared.record)
       await fs.promises.mkdir(path.dirname(filePath), { recursive: true })
       const temporary = `${filePath}.${Date.now()}.tmp`
       try {
         await fs.promises.writeFile(temporary, json, 'utf8')
         await fs.promises.rename(temporary, filePath)
+        prepared.commit()
+        cacheSizes.set(task.id, Buffer.byteLength(json))
+        const summary = buildSummary(prepared.record)
+        if (snapshot?.status === 'completed' || snapshot?.status === 'completed_with_errors') summary.progress = 100
+        const stat = await fs.promises.stat(filePath)
+        const index = { mtimeMs: stat.mtimeMs, size: stat.size, summary }
+        summaryCache.set(task.id, index)
+        const summaryFile = path.join(path.dirname(filePath), 'summary.json')
+        const summaryTemp = `${summaryFile}.${Date.now()}.tmp`
+        try {
+          await fs.promises.writeFile(summaryTemp, JSON.stringify(index), 'utf8')
+          await fs.promises.rename(summaryTemp, summaryFile)
+        } finally { await fs.promises.rm(summaryTemp, { force: true }).catch(() => undefined) }
       } finally {
         await fs.promises.rm(temporary, { force: true }).catch(() => undefined)
       }
@@ -141,6 +166,7 @@ function writeTaskNow(task: TaskRecord, snapshot?: Partial<TaskRecord>): Promise
     if (saveChains.get(task.id) === next) {
       saveChains.delete(task.id)
       if (!saveTimers.has(task.id)) dirtyTasks.delete(task)
+      trimTaskCache()
     }
   }, () => {
     if (saveChains.get(task.id) === next) saveChains.delete(task.id)
@@ -149,6 +175,7 @@ function writeTaskNow(task: TaskRecord, snapshot?: Partial<TaskRecord>): Promise
 }
 
 export function scheduleSave(task: TaskRecord, immediate = false): void {
+  rememberTask(task)
   const existing = saveTimers.get(task.id)
   if (existing) clearTimeout(existing)
   saveTimers.delete(task.id)
@@ -170,6 +197,7 @@ export function scheduleSave(task: TaskRecord, immediate = false): void {
 }
 
 export async function flushSave(task: TaskRecord, snapshot?: Partial<TaskRecord>): Promise<void> {
+  rememberTask(task)
   const timer = saveTimers.get(task.id)
   if (timer) {
     clearTimeout(timer)
@@ -207,12 +235,65 @@ export async function deleteStoredTask(taskId: string): Promise<void> {
   dirtySince.delete(taskId)
   await saveChains.get(taskId)?.catch(() => undefined)
   await fs.promises.rm(getTaskDir(taskId), { recursive: true, force: true })
-  const task = taskCache.get(taskId)
-  if (task) dirtyTasks.delete(task)
+  for (const task of dirtyTasks) if (task.id === taskId) dirtyTasks.delete(task)
   taskCache.delete(taskId)
+  cacheSizes.delete(taskId)
+  summaryCache.delete(taskId)
+  clearImageCache(getTaskDir(taskId))
 }
 
 /** 新任务建好后立刻放入缓存（跨模块只暴露最小写入口） */
 export function rememberTask(task: TaskRecord): void {
   taskCache.set(task.id, task)
+}
+
+/** 只淘汰已结束且无待写入的任务；运行中对象保持唯一身份。 */
+export function trimTaskCache(): void {
+  let bytes = [...cacheSizes.values()].reduce((sum, size) => sum + size, 0)
+  for (const [id, task] of taskCache) {
+    if (taskCache.size <= MAX_CACHED_TASKS && bytes <= MAX_CACHE_BYTES) break
+    if (isTaskActive(task.status) || dirtyTasks.has(task) || saveChains.has(id)) continue
+    bytes -= cacheSizes.get(id) ?? 0
+    cacheSizes.delete(id)
+    taskCache.delete(id)
+  }
+}
+
+export function taskCacheMetrics() {
+  return { entries: taskCache.size, terminalEntries: [...taskCache.values()].filter((task) => !isTaskActive(task.status)).length, bytes: [...cacheSizes.values()].reduce((sum, size) => sum + size, 0) }
+}
+
+/** 有效摘要直接返回；旧格式或失效索引仅在首次读取时重建。 */
+export function readTaskSummary(taskId: string): TaskSummary | null {
+  validateTaskId(taskId)
+  const live = taskCache.get(taskId)
+  if (live) return buildSummary(live)
+  const filePath = getTaskFilePath(taskId)
+  try {
+    const stat = fs.statSync(filePath)
+    const summaryPath = path.join(path.dirname(filePath), 'summary.json')
+    let index = summaryCache.get(taskId)
+    if (!index) {
+      try { index = JSON.parse(fs.readFileSync(summaryPath, 'utf8')) as NonNullable<typeof index> } catch { /* 首次建立索引 */ }
+    }
+    if (index?.mtimeMs === stat.mtimeMs && index.size === stat.size && index.summary?.id === taskId) {
+      summaryCache.set(taskId, index)
+      return index.summary
+    }
+    const task = readTask(taskId)
+    if (!task) return null
+    index = { mtimeMs: stat.mtimeMs, size: stat.size, summary: buildSummary(task) }
+    summaryCache.set(taskId, index)
+    // 摘要可重建，写入失败不影响读取原始任务。
+    const temporary = `${summaryPath}.${process.pid}.tmp`
+    try {
+      fs.writeFileSync(temporary, JSON.stringify(index), 'utf8')
+      fs.renameSync(temporary, summaryPath)
+    } catch (error) { logger.warn('重建任务摘要失败', error) }
+    finally { try { fs.rmSync(temporary, { force: true }) } catch { /* 下次重建 */ } }
+    return index.summary
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') logger.warn('读取任务摘要失败', error)
+    return null
+  }
 }

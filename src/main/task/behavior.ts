@@ -9,6 +9,7 @@ import { getFramesDir } from '../paths'
 import { emitBehaviorWindow, emitSummary } from './event'
 import { failTask, finishTask } from './outcome'
 import { taskSession } from './session'
+import { getTaskStats, updateResultStats } from './stats'
 import { flushSave, newFrame, scheduleSave } from './store'
 
 export async function runBehaviorTask(
@@ -31,12 +32,12 @@ export async function runBehaviorTask(
         durationMs: task.source.durationMs,
         intervalSec: 1 / sampling.fps,
         imageFormat: 'jpeg',
-        maxEdge: Math.min(modelConfig.imageMaxEdge || 1120, 1120),
+        scalePercent: sampling.imageScalePercent,
         startAtZero: true,
         signal: controller.signal,
-        onProgress: ({ percent }) => {
+        onProgress: ({ percent, message }) => {
           task.progress = percent
-          task.phaseMessage = `正在提取行为画面（${sampling.fps} FPS）`
+          task.phaseMessage = message === '等待抽帧资源' ? message : `正在提取行为画面（${sampling.fps} FPS）`
           emitSummary(task)
         }
       })
@@ -89,7 +90,8 @@ export async function runBehaviorTask(
         window.analyzedAt = new Date().toISOString()
         window.model = modelConfig.label
       }
-      const processed = windows.filter((item) => item.status === 'completed' || item.status === 'failed').length
+      updateResultStats(task, window)
+      const processed = getTaskStats(task).processed
       task.progress = Math.round(processed / windows.length * 1000) / 10
       task.phaseMessage = `正在识别行为 ${processed}/${windows.length}`
       scheduleSave(task)

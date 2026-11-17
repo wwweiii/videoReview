@@ -11,12 +11,14 @@ import { getResolvedModelConfigForTesting } from './config/model-config'
 import { getPublicSettings, saveSettings } from './config/settings'
 import { probeModelConfig } from './localization/probe'
 import { testModelConnection } from './model/client'
+import { getModelCallTrace, listModelCallTraces } from './model/call-history'
 import { completeWindowClose } from './app/window'
 import {
   cancelActiveTask,
   deleteTask,
   exportTaskCsv,
-  getTask,
+  getTaskView,
+  getFrameDiagnostics,
   listTasks,
   relocalizeTask,
   retryFailedFrames,
@@ -54,7 +56,8 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('task:start', async (_event, filePath: string) => startReview(filePath))
   ipcMain.handle('task:startBehavior', async (_event, filePath: string) => startBehaviorReview(filePath))
   ipcMain.handle('task:list', async () => listTasks())
-  ipcMain.handle('task:get', async (_event, taskId: string) => getTask(taskId))
+  ipcMain.handle('task:get', async (_event, taskId: string) => getTaskView(taskId))
+  ipcMain.handle('task:diagnostics', async (_event, taskId: string, index: number) => getFrameDiagnostics(taskId, index))
   ipcMain.handle('task:cancel', async (_event, taskId: string) => cancelActiveTask(taskId))
   ipcMain.handle('task:retryFailed', async (_event, taskId: string) => retryFailedFrames(taskId))
   ipcMain.handle('task:relocalize', async (_event, taskId: string) => relocalizeTask(taskId))
@@ -68,6 +71,22 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('settings:save', async (_event, input: SaveSettingsInput) => saveSettings(input))
+  const requireDeveloperMode = (): void => {
+    if (!getPublicSettings().developerMode) throw new Error('请先开启开发者模式')
+  }
+  ipcMain.handle('model:traces', async (_event, before?: string) => {
+    requireDeveloperMode()
+    const page = await listModelCallTraces(before)
+    requireDeveloperMode()
+    const names = new Map(listTasks().map((task) => [task.id, task.name]))
+    return { ...page, items: page.items.map((item) => ({ ...item, taskName: item.taskId ? names.get(item.taskId) : undefined })) }
+  })
+  ipcMain.handle('model:trace', async (_event, id: string) => {
+    requireDeveloperMode()
+    const trace = await getModelCallTrace(id)
+    requireDeveloperMode()
+    return trace
+  })
 
   ipcMain.handle(
     'model:test',

@@ -1,11 +1,11 @@
-import { countFrameStats } from '@shared/task'
+import { getTaskStats, hasUnfinishedResults } from './stats'
 import { taskResults } from '@shared/behavior'
 import type { TaskRecord, TaskSummary } from '@shared/types'
 
 /** 由任务记录生成列表/事件使用的摘要（统计口径由 @shared/task 统一） */
 export function buildSummary(task: TaskRecord): TaskSummary {
   const frames = taskResults(task)
-  const stats = countFrameStats(frames)
+  const stats = getTaskStats(task)
 
   let progress = task.progress
   if (task.status === 'completed' || task.status === 'completed_with_errors') progress = 100
@@ -14,6 +14,7 @@ export function buildSummary(task: TaskRecord): TaskSummary {
   }
 
   return {
+    hasUnfinishedResults: hasUnfinishedResults(task),
     saveError: task.saveError || '',
     id: task.id,
     kind: task.kind ?? 'items',

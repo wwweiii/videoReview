@@ -562,18 +562,26 @@ check('dedupeBoxes · limit 生效', () => {
 
 section('[6/8] buildRequestBody / extractMessageContent')
 
-check('buildRequestBody · 基础字段与 max_tokens 字段名', () => {
+check('buildRequestBody · 基础字段正确且输出上限交给服务端', () => {
   const body = loc.buildRequestBody(
     'mock-vl',
     [{ role: 'user', content: 'ping' }],
-    { maxTokens: 1200, responseFormat: 'json_object', extraBody: { top_k: 5 } }
+    { responseFormat: 'json_object', extraBody: { top_k: 5 } }
   )
   assertEqual(body.model, 'mock-vl', 'model')
   assertEqual(Array.isArray(body.messages) && body.messages.length, 1, 'messages')
   assertEqual(body.temperature, 0, 'temperature')
-  assertEqual(body.max_tokens, 1200, 'max_tokens')
+  assert(!('max_tokens' in body) && !('max_completion_tokens' in body) && !('max_output_tokens' in body), '不应附带输出上限')
   assertEqual(body.response_format.type, 'json_object', 'response_format')
   assertEqual(body.top_k, 5, 'extraBody 透传')
+})
+
+check('buildRequestBody · 旧额外请求体的输出限制不会覆盖服务端默认', () => {
+  const extraBody = { max_tokens: 16, max_completion_tokens: 32, max_output_tokens: 64, top_k: 5 }
+  const body = loc.buildRequestBody('mock-vl', [], { extraBody })
+  assert(!('max_tokens' in body) && !('max_completion_tokens' in body) && !('max_output_tokens' in body), '旧限制应移除')
+  assertEqual(body.top_k, 5, '其他额外字段继续透传')
+  assertEqual(extraBody.max_tokens, 16, '不能修改调用方的原始配置')
 })
 
 check('extractMessageContent · 兼容 content / reasoning / choice.text', () => {
@@ -643,7 +651,7 @@ function countMockBoxes(content, dialect) {
 }
 
 function buildProbeRequestBody(width, height) {
-  const built = loc.buildProbeMessages('zh')
+  const built = loc.buildProbeMessages()
   const messages = [
     { role: 'system', content: built.system },
     {
@@ -663,7 +671,6 @@ function buildProbeRequestBody(width, height) {
 
 function buildLocateRequestBody(space) {
   const built = loc.buildLocalizeMessages({
-    language: 'zh',
     space,
     sentWidth: 1120,
     sentHeight: 672,

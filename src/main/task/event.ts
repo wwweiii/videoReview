@@ -1,8 +1,17 @@
 import { BrowserWindow } from 'electron'
+import { frameView } from '@shared/task-view'
 import type { BehaviorWindowRecord, FrameRecord, TaskEvent, TaskRecord } from '@shared/types'
 import { buildSummary } from './summary'
+import { updateResultStats } from './stats'
 
-const lastSummaryEmit = new Map<string, number>()
+interface Pending {
+  task: TaskRecord
+  frames: Map<number, FrameRecord>
+  windows: Map<number, BehaviorWindowRecord>
+  timer: ReturnType<typeof setTimeout>
+}
+const pending = new Map<string, Pending>()
+const BATCH_MS = 150
 
 function broadcast(event: TaskEvent): void {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -10,22 +19,40 @@ function broadcast(event: TaskEvent): void {
   }
 }
 
+function flush(taskId: string): void {
+  const entry = pending.get(taskId)
+  if (!entry) return
+  clearTimeout(entry.timer)
+  pending.delete(taskId)
+  const summary = buildSummary(entry.task)
+  if (entry.frames.size || entry.windows.size) {
+    broadcast({ kind: 'results', summary, frames: [...entry.frames.values()].map(frameView), windows: [...entry.windows.values()].map(frameView) })
+  } else broadcast({ kind: 'summary', summary })
+}
+
+function queue(task: TaskRecord): Pending {
+  let entry = pending.get(task.id)
+  if (!entry) {
+    entry = { task, frames: new Map(), windows: new Map(), timer: setTimeout(() => flush(task.id), BATCH_MS) }
+    pending.set(task.id, entry)
+  }
+  return entry
+}
+
 export function emitSummary(task: TaskRecord, force = false): void {
-  const now = Date.now()
-  if (!force && now - (lastSummaryEmit.get(task.id) ?? 0) < 250) return
-  lastSummaryEmit.set(task.id, now)
+  if (!force) { queue(task); return }
+  flush(task.id)
   broadcast({ kind: 'summary', summary: buildSummary(task) })
 }
 
 export function emitFrame(task: TaskRecord, frame: FrameRecord): void {
-  broadcast({ kind: 'frame', summary: buildSummary(task), frame: { ...frame } })
+  updateResultStats(task, frame)
+  queue(task).frames.set(frame.index, frame)
 }
 
 export function emitBehaviorWindow(task: TaskRecord, window: BehaviorWindowRecord): void {
-  broadcast({ kind: 'behavior-window', summary: buildSummary(task), window: { ...window } })
+  updateResultStats(task, window)
+  queue(task).windows.set(window.index, window)
 }
 
-/** 任务结束/重新开始时清掉摘要节流时间戳 */
-export function clearSummaryThrottle(taskId: string): void {
-  lastSummaryEmit.delete(taskId)
-}
+export function clearSummaryThrottle(taskId: string): void { flush(taskId) }

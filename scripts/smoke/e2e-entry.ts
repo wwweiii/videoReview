@@ -2,7 +2,7 @@
  * Electron 端到端冒烟（scripts/smoke/run-e2e.mjs 的入口）：
  * 真实 ffmpeg 抽帧 → 判定 → 定位 → task.json → 重定位。
  */
-import { app } from 'electron'
+import { app, nativeImage } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
@@ -10,13 +10,20 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { configureElectronDataPath, getDataDir } from '../../src/main/paths'
 import { verifySettingsUi } from './settings-ui'
 import { extractFrames } from '../../src/main/media/ffmpeg'
+import { imageDataUrl, clearImageCache, imageCacheMetrics } from '../../src/main/media/images'
+import { extractionScheduler, modelScheduler } from '../../src/main/runtime/scheduler'
+import { getPublicSettings, saveSettings } from '../../src/main/config/settings'
+import { prepareImage } from '../../src/main/localization/locator'
 import {
   getTask,
+  getFrameDiagnostics,
+  getTaskView,
   deleteTask,
   initializeTaskManager,
   listTasks,
   relocalizeTask,
-  startReview
+  startReview,
+  startBehaviorReview
 } from '../../src/main/task/manager'
 
 const root = process.cwd()
@@ -59,7 +66,7 @@ function startMock(port: number): ChildProcess {
   })
 }
 
-function makeVideo(target: string): Promise<void> {
+function makeVideo(target: string, size = '640x360', duration = 6): Promise<void> {
   const platformDir = process.platform === 'win32' ? 'win32' : 'linux'
   const archDir = process.arch === 'arm64' ? 'arm64' : 'x64'
   const executable = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
@@ -68,7 +75,7 @@ function makeVideo(target: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(
       binary,
-      ['-y', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc=size=640x360:rate=10', '-t', '6', '-pix_fmt', 'yuv420p', target],
+      ['-y', '-hide_banner', '-loglevel', 'error', '-f', 'lavfi', '-i', `testsrc=size=${size}:rate=10`, '-t', String(duration), '-pix_fmt', 'yuv420p', target],
       { stdio: 'ignore', windowsHide: true }
     )
     child.on('error', reject)
@@ -92,6 +99,9 @@ function writeSettings(port: number): void {
   const dataDir = getDataDir()
   fs.mkdirSync(dataDir, { recursive: true })
   const settings = {
+    developerMode: true,
+    requestConcurrency: 2,
+    judgmentImage: { maxEdge: 1120, format: 'jpeg', quality: 90 },
     modelMode: 'custom',
     customModel: {
       baseUrl: `http://127.0.0.1:${port}/v1`,
@@ -99,17 +109,19 @@ function writeSettings(port: number): void {
       concurrency: 2,
       timeoutSec: 30,
       extraHeaders: '',
-      extraBody: '',
-      maxTokens: 1200,
+      // 模拟历史版本设置，验证移除配置后不会继续影响请求。
+      extraBody: JSON.stringify({ max_tokens: 16, max_completion_tokens: 32, max_output_tokens: 64 }),
+      maxTokens: 16,
+      promptLanguage: 'en',
       imageMaxEdge: 1120,
       imageFormat: 'png',
-      promptLanguage: 'zh',
+      imageScalePercent: 60,
       coordinateSpaceOverride: 'auto',
       boxOrderOverride: 'auto',
       parseDialectOverride: 'auto'
     },
     intervalSec: 1,
-    prohibitedItems: ['pen', 'cup', 'kettle', 'phone', 'custom:testpower'],
+    prohibitedItems: ['phone', 'pencil', 'custom:testpower'],
     customProhibitedItems: [{ id: 'custom:testpower', label: '充电宝' }],
     analysisMode: 'single',
     groupSize: 4,
@@ -127,6 +139,11 @@ async function main(): Promise<void> {
     await waitHealth(`http://127.0.0.1:${port}/health`)
     writeSettings(port)
     initializeTaskManager()
+    const publicModel = getPublicSettings().customModel
+    check('旧语言与 token 配置不再暴露或使用', !('maxTokens' in publicModel) && !('promptLanguage' in publicModel))
+    check('模型配置移除图片比例、像素上限与格式覆盖', !('imageScalePercent' in publicModel) && !('imageMaxEdge' in publicModel) && !('imageFormat' in publicModel))
+    check('旧模型共用图片比例迁入行为设置', getPublicSettings().behaviorImageScalePercent === 60)
+    check('旧判定图片设置迁移为 100% 且保留原图格式', JSON.stringify(getPublicSettings().judgmentImage) === JSON.stringify({ scalePercent: 100 }))
     await makeVideo(videoPath)
 
     const summary = await startReview(videoPath)
@@ -153,8 +170,8 @@ async function main(): Promise<void> {
       sample?.regions.map((item) => `${item.category}/${item.itemId}`)
     )
     check(
-      '内置物品固定包含在任务配置',
-      ['pen', 'cup', 'kettle', 'phone'].every((id) => task.config.prohibitedItems.includes(id)),
+      '任务配置仅包含勾选的预设和自定义物品',
+      JSON.stringify(task.config.prohibitedItems) === JSON.stringify(['phone', 'pencil', 'custom:testpower']),
       task.config.prohibitedItems
     )
     check(
@@ -183,6 +200,54 @@ async function main(): Promise<void> {
     check('task.json 持久化 regions', persistedRegions >= 2, persistedRegions)
     check('任务列表可用', listTasks().length === 1, listTasks().length)
 
+    const framePath = path.join(path.dirname(taskFile), 'frames', task.frames[0].fileName)
+    const originalBytes = fs.statSync(framePath).size
+    const prepared = await imageDataUrl(framePath, { maxEdge: 320, format: 'jpeg', quality: 90 })
+    const buffer = Buffer.from(prepared.split(',')[1], 'base64')
+    const size = nativeImage.createFromBuffer(buffer).getSize()
+    check('旧任务图片快照仍按保存的长边与 JPEG 格式处理', size.width === 320 && size.height === 180 && prepared.startsWith('data:image/jpeg;'), size)
+    check('原始抽帧保留，发送副本体积下降', nativeImage.createFromPath(framePath).getSize().width === 640 && buffer.length < originalBytes, { originalBytes, preparedBytes: buffer.length })
+    const conversions = imageCacheMetrics().conversions
+    clearImageCache()
+    await imageDataUrl(framePath, { maxEdge: 320, format: 'jpeg', quality: 90 })
+    check('清空内存后仍复用已转换的图片副本', imageCacheMetrics().conversions === conversions)
+    const originalJudgment = await imageDataUrl(framePath, { scalePercent: 100 })
+    const scaledJudgment = await imageDataUrl(framePath, { scalePercent: 50 })
+    const scaledJudgmentSize = nativeImage.createFromBuffer(Buffer.from(scaledJudgment.split(',')[1], 'base64')).getSize()
+    check('判定 100% 与原图字节完全一致，无额外压缩或格式转换', originalJudgment.startsWith('data:image/png;') && Buffer.from(originalJudgment.split(',')[1], 'base64').equals(fs.readFileSync(framePath)))
+    check('判定 50% 保留 PNG 格式，宽高各减半', scaledJudgment.startsWith('data:image/png;') && scaledJudgmentSize.width === 320 && scaledJudgmentSize.height === 180)
+
+    const largeFrame = path.join(path.dirname(framePath), 'scale-source.png')
+    fs.writeFileSync(largeFrame, nativeImage.createFromPath(framePath).resize({ width: 1920, height: 1080 }).toPNG())
+    const fullScale = await prepareImage(largeFrame, { imageScalePercent: 100 })
+    check('定位 100% 保留 1920×1080 原尺寸、PNG 格式及原始数据', fullScale.sentWidth === 1920 && fullScale.sentHeight === 1080 && fullScale.dataUrl.startsWith('data:image/png;') && Buffer.from(fullScale.dataUrl.split(',')[1], 'base64').equals(fs.readFileSync(largeFrame)))
+    const halfScale = await prepareImage(largeFrame, { imageScalePercent: 50 })
+    check('定位 50% 按原始宽高缩放为 960×540，不再对齐到 28 的倍数', halfScale.sentWidth === 960 && halfScale.sentHeight === 540 && halfScale.originWidth === 1920 && halfScale.originHeight === 1080 && halfScale.dataUrl.startsWith('data:image/png;'))
+    const oddFrame = path.join(path.dirname(framePath), 'scale-odd.png')
+    fs.writeFileSync(oddFrame, nativeImage.createFromPath(framePath).resize({ width: 201, height: 101 }).toPNG())
+    const oddScale = await prepareImage(oddFrame, { imageScalePercent: 50 })
+    check('奇数尺寸按比例取整，定位使用实际发送尺寸', oddScale.sentWidth === 101 && oddScale.sentHeight === 51)
+    const jpegFrame = path.join(path.dirname(framePath), 'scale-source.jpg')
+    fs.writeFileSync(jpegFrame, nativeImage.createFromPath(framePath).toJPEG(88))
+    const jpegOriginal = await prepareImage(jpegFrame, { imageScalePercent: 100 })
+    const jpegScaled = await prepareImage(jpegFrame, { imageScalePercent: 50 })
+    check('JPEG 在 100% 时复用原始数据，50% 时保持 JPEG 格式', Buffer.from(jpegOriginal.dataUrl.split(',')[1], 'base64').equals(fs.readFileSync(jpegFrame)) && jpegScaled.dataUrl.startsWith('data:image/jpeg;') && jpegScaled.sentWidth === 320 && jpegScaled.sentHeight === 180)
+
+    const largeVideo = path.join(getDataDir(), 'scale-source.mp4')
+    await makeVideo(largeVideo, '1920x1080', 1)
+    for (const percent of [100, 50]) {
+      const scaleTaskId = crypto.randomUUID()
+      const frames = await extractFrames({ taskId: scaleTaskId, filePath: largeVideo, durationMs: 1000, intervalSec: 1, imageFormat: 'jpeg', scalePercent: percent, startAtZero: true })
+      const extractedPath = path.join(getDataDir(), 'tasks', scaleTaskId, 'frames', frames[0].fileName)
+      const dimensions = nativeImage.createFromPath(extractedPath).getSize()
+      check(`行为 JPEG 抽帧 ${percent}% 遵循原始比例且没有 1120 上限`, dimensions.width === 1920 * percent / 100 && dimensions.height === 1080 * percent / 100 && frames[0].fileName.endsWith('.jpg'), dimensions)
+      await deleteTask(scaleTaskId)
+    }
+    const diagnostic = await getFrameDiagnostics(task.id, 0)
+    const originalHash = crypto.createHash('sha256').update(fs.readFileSync(framePath)).digest('hex')
+    check('实际判定请求使用原图内容并保留图片摘要与排队耗时', diagnostic.callTraces.some((trace) => trace.requestBody.includes(`sha256=${originalHash}`) && trace.queueMs !== undefined))
+    check('任务清单与普通 IPC 结果不携带调用正文', !fs.readFileSync(taskFile, 'utf8').includes('base64,') && getTaskView(task.id).frames.every((frame) => !frame.callTraces.length && !frame.rawResponse))
+
     const relocalizeSummary = await relocalizeTask(summary.id)
     check('relocalize 接受任务', Boolean(relocalizeSummary.id))
     const relocalizeStatus = await waitTerminal(summary.id)
@@ -196,6 +261,50 @@ async function main(): Promise<void> {
     const uiTaskId = await verifySettingsUi(videoPath, check)
     const uiStatus = await waitTerminal(uiTaskId)
     check('界面启动的任务完成并落盘', uiStatus === 'completed', uiStatus)
+    const uiTask = getTask(uiTaskId)
+    const uiImage = await imageDataUrl(path.join(getDataDir(), 'tasks', uiTaskId, 'frames', uiTask.frames[0].fileName), { scalePercent: 50 })
+    const uiImageHash = crypto.createHash('sha256').update(Buffer.from(uiImage.split(',')[1], 'base64')).digest('hex')
+    const uiDiagnostic = await getFrameDiagnostics(uiTaskId, 0)
+    check('界面保存的 50% 比例确实用于模型判定请求', uiDiagnostic.callTraces.some((trace) => trace.operation === '物品判定' && trace.requestBody.includes(`sha256=${uiImageHash}`)))
+
+    const localizedFrame = uiTask.frames.find((frame) => frame.regionStatus === 'ok')!
+    const locatedImage = await imageDataUrl(path.join(getDataDir(), 'tasks', uiTaskId, 'frames', localizedFrame.fileName), { scalePercent: 50 })
+    const locatedHash = crypto.createHash('sha256').update(Buffer.from(locatedImage.split(',')[1], 'base64')).digest('hex')
+    const locatedDiagnostic = await getFrameDiagnostics(uiTaskId, localizedFrame.index)
+    check('物品判定和定位实际使用相同的 50% 图片数据', ['物品判定', '违禁物定位'].every((operation) => locatedDiagnostic.callTraces.some((trace) => trace.operation === operation && trace.requestBody.includes(`sha256=${locatedHash}`))))
+
+    const settingsAfterUi = getPublicSettings()
+    const persistedSettings = JSON.parse(fs.readFileSync(path.join(getDataDir(), 'settings.json'), 'utf8'))
+    check('新比例分区落盘，旧模型比例字段不再保存', persistedSettings.judgmentImage.scalePercent === 50 && persistedSettings.behaviorImageScalePercent === 75 && !('imageScalePercent' in persistedSettings.customModel))
+    const behaviorSummary = await startBehaviorReview(videoPath)
+    saveSettings({ ...settingsAfterUi, section: 'behavior', behaviorImageScalePercent: 25 })
+    const behaviorStatus = await waitTerminal(behaviorSummary.id)
+    const behaviorTask = getTask(behaviorSummary.id)
+    check('行为任务固定创建时的 75% 比例并完成识别', behaviorStatus === 'completed' && behaviorTask.behaviorConfig?.imageScalePercent === 75)
+    const behaviorSample = behaviorTask.behaviorWindows![0].samples[0]
+    const behaviorFramePath = path.join(getDataDir(), 'tasks', behaviorTask.id, 'frames', behaviorSample.fileName)
+    const behaviorSize = nativeImage.createFromPath(behaviorFramePath).getSize()
+    check('行为抽帧使用独立 75% 比例得到 480×270', behaviorSize.width === 480 && behaviorSize.height === 270, behaviorSize)
+    const behaviorHash = crypto.createHash('sha256').update(fs.readFileSync(behaviorFramePath)).digest('hex')
+    const behaviorDiagnostic = await getFrameDiagnostics(behaviorTask.id, 0)
+    check('行为模型请求直接使用按 75% 抽取的图片', behaviorDiagnostic.callTraces.some((trace) => trace.operation === '行为判定' && trace.requestBody.includes(`sha256=${behaviorHash}`)))
+
+    saveSettings({ ...settingsAfterUi, section: 'items', judgmentImage: { scalePercent: 100 } })
+    relocalizeTask(uiTaskId)
+    await waitTerminal(uiTaskId)
+    const retriedDiagnostic = await getFrameDiagnostics(uiTaskId, localizedFrame.index)
+    const retriedTrace = retriedDiagnostic.callTraces.filter((trace) => trace.operation === '违禁物定位').at(-1)
+    check('修改设置后重定位仍使用任务的 50% 图片快照', retriedTrace?.requestBody.includes(`sha256=${locatedHash}`) === true)
+    saveSettings(settingsAfterUi)
+
+    const parallel = await Promise.all([startReview(videoPath), startReview(videoPath), startReview(videoPath)])
+    const statuses = await Promise.all(parallel.map((task) => waitTerminal(task.id)))
+    check('三个任务并行提交均能完成', statuses.every((status) => status === 'completed'), statuses)
+    const health = await (await fetch(`http://127.0.0.1:${port}/health`)).json()
+    check('服务端实测在途请求不超过全局上限', health.peakRequests <= 2, health.peakRequests)
+    check('服务端收到的请求均不指定输出 token 上限', health.outputLimitedRequests === 0, health.outputLimitedRequests)
+    check('旧英文设置下定位和探针仍使用中文', health.nonChineseLocalizationRequests === 0 && health.counts.probeCount > 0 && health.counts.locateCount > 0)
+    check('抽帧进程串行调度且任务结束后无残留名额', extractionScheduler.snapshot().peak === 1 && extractionScheduler.snapshot().active === 0 && modelScheduler.snapshot().active === 0)
 
     const cancelledId = crypto.randomUUID()
     const controller = new AbortController()
@@ -203,7 +312,7 @@ async function main(): Promise<void> {
     try {
       await extractFrames({
         taskId: cancelledId, filePath: videoPath, durationMs: 6000, intervalSec: 0.1,
-        signal: controller.signal, onProgress: () => controller.abort()
+        signal: controller.signal, onProgress: (progress) => { if (progress.percent > 0) controller.abort() }
       })
     } catch (error) {
       cancelled = error instanceof Error && error.message === '任务已取消'

@@ -1,5 +1,4 @@
 import type { BoxOrder, CoordinateSpace, ParseDialect } from '@shared/localization/profile'
-import type { PromptLanguage } from '@shared/localization/prompts'
 import type { ModelMode, TestModelInput } from '@shared/types'
 import { getPresetConfig } from './preset'
 import {
@@ -22,36 +21,38 @@ export interface ResolvedModelConfig {
   timeoutSec: number
   extraHeaders: string
   extraBody: string
-  maxTokens: number
-  imageMaxEdge: number
-  imageFormat: 'png' | 'jpeg'
-  promptLanguage: PromptLanguage
   coordinateSpaceOverride: 'auto' | CoordinateSpace
   boxOrderOverride: 'auto' | BoxOrder
   parseDialectOverride: 'auto' | ParseDialect
 }
 
-function resolvePreset(): ResolvedModelConfig {
+/** 关闭开发者模式时保留草稿，但始终禁用额外请求体和坐标覆盖。 */
+function runtimeForMode(source: Parameters<typeof normalizeRuntimeModel>[0], developerMode: boolean) {
+  return developerMode ? normalizeRuntimeModel(source) : {
+    extraBody: '',
+    coordinateSpaceOverride: 'auto' as const,
+    boxOrderOverride: 'auto' as const,
+    parseDialectOverride: 'auto' as const
+  }
+}
+
+function resolvePreset(developerMode = loadSettings().developerMode): ResolvedModelConfig {
   const preset = getPresetConfig()
   if (!preset) throw new Error('预设模型不可用')
-  const runtime = normalizeRuntimeModel({
+  const runtime = runtimeForMode({
     extraBody: preset.extraBody,
-    maxTokens: preset.maxTokens,
-    imageMaxEdge: preset.imageMaxEdge,
-    imageFormat: preset.imageFormat,
-    promptLanguage: preset.promptLanguage,
     coordinateSpaceOverride: preset.coordinateSpaceOverride,
     boxOrderOverride: preset.boxOrderOverride,
     parseDialectOverride: preset.parseDialectOverride
-  })
+  }, developerMode)
   return {
     mode: 'preset',
     label: '预设',
-    developerMode: loadSettings().developerMode,
+    developerMode,
     baseUrl: preset.baseUrl,
     model: preset.model,
     apiKey: preset.apiKey,
-    concurrency: preset.concurrency,
+    concurrency: loadSettings().requestConcurrency,
     timeoutSec: preset.timeoutSec,
     extraHeaders: preset.extraHeaders,
     ...runtime
@@ -72,37 +73,31 @@ export function getResolvedModelConfig(): ResolvedModelConfig {
     baseUrl: stored.customModel.baseUrl,
     model: stored.customModel.model,
     apiKey: readSavedApiKey(stored.customModel),
-    concurrency: stored.customModel.concurrency,
+    concurrency: stored.requestConcurrency,
     timeoutSec: stored.customModel.timeoutSec,
     extraHeaders: stored.customModel.extraHeaders,
-    extraBody: stored.customModel.extraBody,
-    maxTokens: stored.customModel.maxTokens,
-    imageMaxEdge: stored.customModel.imageMaxEdge,
-    imageFormat: stored.customModel.imageFormat,
-    promptLanguage: stored.customModel.promptLanguage,
-    coordinateSpaceOverride: stored.customModel.coordinateSpaceOverride,
-    boxOrderOverride: stored.customModel.boxOrderOverride,
-    parseDialectOverride: stored.customModel.parseDialectOverride
+    ...runtimeForMode(stored.customModel, stored.developerMode)
   }
 }
 
 export function getResolvedModelConfigForTesting(input: TestModelInput): ResolvedModelConfig {
-  if (input.modelMode === 'preset') return resolvePreset()
-  validateCustomModel(input.customModel)
   const stored = loadSettings()
+  const developerMode = input.developerMode ?? stored.developerMode
+  if (input.modelMode === 'preset') return resolvePreset(developerMode)
+  validateCustomModel(input.customModel)
   const apiKey = input.customModel.apiKey?.trim() || readSavedApiKey(stored.customModel)
-  const runtime = applyRuntimeOverrides(input.customModel, {
+  const runtime = runtimeForMode(applyRuntimeOverrides(input.customModel, {
     ...DEFAULT_MODEL_RUNTIME,
     ...stored.customModel
-  })
+  }), developerMode)
   return {
     mode: 'custom',
     label: input.customModel.model.trim(),
-    developerMode: stored.developerMode,
+    developerMode,
     baseUrl: input.customModel.baseUrl.trim(),
     model: input.customModel.model.trim(),
     apiKey,
-    concurrency: stored.customModel.concurrency,
+    concurrency: stored.requestConcurrency,
     timeoutSec: stored.customModel.timeoutSec,
     extraHeaders: stored.customModel.extraHeaders,
     ...runtime

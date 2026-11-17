@@ -5,6 +5,10 @@ import { loadSettings } from '../config/settings'
 import type { ModelCallTrace } from '@shared/types'
 import { logger } from '../logger'
 import { TEST_IMAGE_BASE64 } from './prompts'
+import { modelScheduler, schedulingKey } from '../runtime/scheduler'
+import { compactRequestBody } from './trace'
+import { recordModelCallTrace } from './call-history'
+import { isTaskId } from '../paths'
 
 export class FatalModelError extends Error {}
 
@@ -51,10 +55,9 @@ function parseExtraHeaders(extraHeaders: string): Record<string, string> {
 
 export async function requestChat(
   config: ResolvedModelConfig,
-  messages: ChatMessage[],
+  messages: ChatMessage[] | (() => Promise<ChatMessage[]>),
   options: {
     operation?: string
-    maxTokens?: number
     timeoutSec?: number
     signal?: AbortSignal
     responseFormat?: 'json_object' | null
@@ -73,13 +76,8 @@ export async function requestChat(
   Object.assign(headers, parseExtraHeaders(config.extraHeaders))
 
   const timeoutSec = Math.max(5, options.timeoutSec ?? config.timeoutSec)
-  const requestPayload = buildRequestBody(config.model, messages, {
-      maxTokens: options.maxTokens ?? config.maxTokens,
-      temperature: 0,
-      responseFormat: options.responseFormat ?? null,
-      extraBody: parseModelExtraBody(config.extraBody)
-    })
-  const body = JSON.stringify(requestPayload)
+  let body = ''
+  let traceBody: string | undefined
   // 设置页关闭开发者模式后，即使已有任务仍在运行，后续请求也不再产生轨迹。
   const traceEnabled = (): boolean => config.developerMode && loadSettings().developerMode
 
@@ -90,31 +88,50 @@ export async function requestChat(
 
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     if (options.signal?.aborted) throw new Error('分析已取消')
+    modelScheduler.setLimit(loadSettings().requestConcurrency)
+    const queuedAt = Date.now()
+    const release = await modelScheduler.acquire(schedulingKey(), options.signal)
+    const queueMs = Date.now() - queuedAt
     const traceStartedAt = new Date().toISOString()
     let traceStatus: number | null = null
     let traceResponse = ''
     let traceError = ''
-    const recordTrace = (): void => {
+    const recordTrace = async (): Promise<void> => {
       if (!traceEnabled()) return
-      traces.push({
+      const trace: ModelCallTrace = {
         operation: options.operation ?? '模型调用',
         startedAt: traceStartedAt,
         finishedAt: new Date().toISOString(),
         latencyMs: Date.now() - new Date(traceStartedAt).getTime(),
         endpoint,
         status: traceStatus,
-        requestBody: body,
+        requestBody: traceBody ??= compactRequestBody(body),
+        queueMs,
+        requestBytes: Buffer.byteLength(body),
         responseBody: traceResponse,
         ...extractUsage(traceResponse),
         error: traceError
-      })
+      }
+      traces.push(trace)
+      const key = schedulingKey()
+      await recordModelCallTrace(trace, isTaskId(key) ? key : null, config.model)
     }
     const timeoutController = new AbortController()
-    const timer = setTimeout(() => timeoutController.abort(), timeoutSec * 1000)
+    let timer: ReturnType<typeof setTimeout> | undefined
     const signal = options.signal
       ? AbortSignal.any([options.signal, timeoutController.signal])
       : timeoutController.signal
     try {
+      if (options.signal?.aborted) throw new Error('分析已取消')
+      if (!body) {
+        const prepared = typeof messages === 'function' ? await messages() : messages
+        body = JSON.stringify(buildRequestBody(config.model, prepared, {
+          temperature: 0,
+          responseFormat: options.responseFormat ?? null, extraBody: parseModelExtraBody(config.extraBody)
+        }))
+      }
+      if (options.signal?.aborted) throw new Error('分析已取消')
+      timer = setTimeout(() => timeoutController.abort(), timeoutSec * 1000)
       const response = await fetch(endpoint, {
         method: 'POST',
         headers,
@@ -139,16 +156,16 @@ export async function requestChat(
 
       const content = extractResponseContent(text, options.requireComplete)
       if (!content.trim()) throw new Error('模型未返回内容')
-      recordTrace()
+      await recordTrace()
       return { content, latencyMs, traces }
     } catch (error) {
       traceError = error instanceof Error ? error.message : String(error)
       if (options.signal?.aborted) {
-        recordTrace()
+        await recordTrace()
         throw new Error('分析已取消')
       }
       if (error instanceof FatalModelError) {
-        recordTrace()
+        await recordTrace()
         throw error
       }
       if (isAbortError(error)) {
@@ -169,15 +186,17 @@ export async function requestChat(
         (error as { status?: number }).status === 429 ||
         ((error as { status?: number }).status ?? 0) >= 500
       if (attempt < maxAttempts - 1 && retryable) {
-        recordTrace()
+        await recordTrace()
         clearTimeout(timer)
+        release()
         await sleep(800 * (attempt + 1), options.signal)
         continue
       }
-      recordTrace()
+      await recordTrace()
       throw lastError
     } finally {
       clearTimeout(timer)
+      release()
     }
   }
 
@@ -266,7 +285,6 @@ export async function testModelConnection(
   ]
   const { content, latencyMs } = await requestChat(config, messages, {
     operation: '连接测试',
-    maxTokens: 30,
     timeoutSec: Math.min(config.timeoutSec, 45)
   })
   return {

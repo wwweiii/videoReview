@@ -1,4 +1,6 @@
 import { nativeImage } from 'electron'
+import { normalizeImageScalePercent } from '@shared/image'
+import { imageDataUrl } from '../media/images'
 import { formatTimeMs } from '@shared/format'
 import { matchItem, resolveProhibitedItems } from '@shared/items'
 import type { ChatContentPart, ChatMessage } from '@shared/localization/request'
@@ -17,8 +19,7 @@ import { requestChat } from '../model/client'
 import { LocalizationUnavailableError } from './probe'
 
 export interface PrepareImageOptions {
-  imageMaxEdge: number
-  imageFormat: 'png' | 'jpeg'
+  imageScalePercent: number
 }
 
 export interface PreparedImage {
@@ -29,46 +30,21 @@ export interface PreparedImage {
   originHeight: number
 }
 
-const MULTIPLE = 28
-
-function roundToMultiple(value: number): number {
-  return Math.max(MULTIPLE, Math.floor(value / MULTIPLE) * MULTIPLE)
-}
-
-/** 定位请求的默认图片长边：传原图（0）时也降到该值，保证速度与坐标标定一致 */
-const DEFAULT_LOCALIZE_MAX_EDGE = 1120
-
-/** 读取帧图片，按配置缩放并编码为 data URL */
-export function prepareImage(framePath: string, options: PrepareImageOptions): PreparedImage {
-  const image = nativeImage.createFromPath(framePath)
-  if (image.isEmpty()) throw new Error('无法读取帧图片')
-  const origin = image.getSize()
-  let width = origin.width
-  let height = origin.height
-
-  // 注意：定位阶段始终按"已知尺寸"发送（0 = 自动 1120），
-  // 否则外部网关内部 resize 会让 absolute_px 标定失效，而且上传很慢。
-  const maxEdge = options.imageMaxEdge > 0 ? options.imageMaxEdge : DEFAULT_LOCALIZE_MAX_EDGE
-  if (Math.max(width, height) > maxEdge) {
-    const scale = maxEdge / Math.max(width, height)
-    width = roundToMultiple(Math.round(width * scale))
-    height = roundToMultiple(Math.round(height * scale))
-  }
-
-  const resized =
-    width === origin.width && height === origin.height
-      ? image
-      : image.resize({ width, height, quality: 'good' })
-
-  const buffer = options.imageFormat === 'jpeg' ? resized.toJPEG(85) : resized.toPNG()
-  const mime = options.imageFormat === 'jpeg' ? 'image/jpeg' : 'image/png'
-
+/** 按原始画面比例缩放并保留 PNG/JPEG 格式，100% 直接复用原始数据。 */
+export async function prepareImage(framePath: string, options: PrepareImageOptions, signal?: AbortSignal): Promise<PreparedImage> {
+  const originalUrl = await imageDataUrl(framePath, undefined, signal)
+  const original = nativeImage.createFromBuffer(Buffer.from(originalUrl.split(',')[1], 'base64'))
+  if (original.isEmpty()) throw new Error('无法读取帧图片')
+  const origin = original.getSize()
+  const scalePercent = normalizeImageScalePercent(options.imageScalePercent)
+  const dataUrl = scalePercent === 100
+    ? originalUrl
+    : await imageDataUrl(framePath, { scalePercent }, signal)
+  const sent = scalePercent === 100 ? origin
+    : nativeImage.createFromBuffer(Buffer.from(dataUrl.split(',')[1], 'base64')).getSize()
   return {
-    dataUrl: `data:${mime};base64,${buffer.toString('base64')}`,
-    sentWidth: width,
-    sentHeight: height,
-    originWidth: origin.width,
-    originHeight: origin.height
+    dataUrl, sentWidth: sent.width, sentHeight: sent.height,
+    originWidth: origin.width, originHeight: origin.height
   }
 }
 
@@ -86,6 +62,8 @@ function normalizeLabel(value: string): string {
 export interface LocalizeFrameInput {
   framePath: string
   timestampMs: number
+  /** 物品任务中与判定共用的缩放比例。 */
+  imageScalePercent?: number
   itemIds: string[]
   /** 自定义违禁物（任务创建时的快照） */
   customItems?: CustomProhibitedItem[]
@@ -157,15 +135,11 @@ export async function localizeFrame(
   }
 
   const customItems = input.customItems ?? []
-  const prepared = prepareImage(input.framePath, {
-    imageMaxEdge: config.imageMaxEdge,
-    imageFormat: config.imageFormat
-  })
+  const prepared = await prepareImage(input.framePath, { imageScalePercent: normalizeImageScalePercent(input.imageScalePercent) }, signal)
 
   const focusLabels = focusLabelsForFrame(input.focusCategories, input.itemIds, customItems)
 
   const { system, user } = buildLocalizeMessages({
-    language: config.promptLanguage,
     space: profile.coordinateSpace,
     sentWidth: prepared.sentWidth,
     sentHeight: prepared.sentHeight,
@@ -187,7 +161,6 @@ export async function localizeFrame(
   ]
 
   const { content, traces } = await requestChat(config, messages, {
-    maxTokens: Math.max(config.maxTokens, 1200),
     timeoutSec: Math.min(config.timeoutSec, 60),
     signal,
     requireComplete: true,

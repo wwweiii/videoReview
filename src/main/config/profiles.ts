@@ -62,7 +62,8 @@ function persistProfiles(): void {
 export function computePromptFingerprint(config: ResolvedModelConfig): string {
   const payload = [
     LOCALIZE_PROMPT_VERSION,
-    config.promptLanguage,
+    'zh',
+    config.extraBody,
     config.coordinateSpaceOverride,
     config.boxOrderOverride,
     config.parseDialectOverride

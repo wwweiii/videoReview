@@ -1,4 +1,6 @@
 import type { JSX } from 'react'
+import { DEFAULT_GROUP_SIZE, DEFAULT_INTERVAL_SEC } from '@shared/defaults'
+import { normalizeImageScalePercent } from '@shared/image'
 import { ANALYSIS_MODE_LABELS } from '@shared/task'
 import type { AnalysisMode } from '@shared/types'
 import type { SettingsForm } from '../../hooks/useSettingsForm'
@@ -19,7 +21,7 @@ export function ItemSettingsSection({ form }: { form: SettingsForm }): JSX.Eleme
               max={60}
               step={0.5}
               value={form.intervalSec}
-              onChange={(event) => form.setIntervalSec(Number(event.target.value) || 2)}
+              onChange={(event) => form.setIntervalSec(Number(event.target.value) || DEFAULT_INTERVAL_SEC)}
             />
             <span>秒</span>
           </div>
@@ -49,7 +51,7 @@ export function ItemSettingsSection({ form }: { form: SettingsForm }): JSX.Eleme
                   min={2}
                   max={8}
                   value={form.groupSize}
-                  onChange={(event) => form.setGroupSize(Number(event.target.value) || 4)}
+                  onChange={(event) => form.setGroupSize(Number(event.target.value) || DEFAULT_GROUP_SIZE)}
                 />
                 <span>帧</span>
               </div>
@@ -72,6 +74,15 @@ export function ItemSettingsSection({ form }: { form: SettingsForm }): JSX.Eleme
             </button>
           </div>
         </div>
+        <label className="form-field">
+          <span>图片缩放比例</span>
+          <div className="input-unit">
+            <input type="number" min={1} max={100} step={1}
+              value={form.judgmentImage.scalePercent}
+              onChange={(event) => form.setJudgmentImage({ scalePercent: normalizeImageScalePercent(event.target.value) })} />
+            <span>%</span>
+          </div>
+        </label>
       </div>
 
       <ItemSection form={form} />

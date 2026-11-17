@@ -1,4 +1,5 @@
 import type { JSX } from 'react'
+import { normalizeImageScalePercent } from '@shared/image'
 import {
   DEFAULT_BEHAVIOR_FPS,
   DEFAULT_BEHAVIOR_STRIDE_SEC,
@@ -67,6 +68,15 @@ export function BehaviorSettingsSection({ form }: { form: SettingsForm }): JSX.E
               }
             />
             <span>FPS</span>
+          </div>
+        </label>
+        <label className="form-field">
+          <span>图片缩放比例</span>
+          <div className="input-unit">
+            <input type="number" min={1} max={100} step={1}
+              value={form.behaviorImageScalePercent}
+              onChange={(event) => form.setBehaviorImageScalePercent(normalizeImageScalePercent(event.target.value))} />
+            <span>%</span>
           </div>
         </label>
       </div>

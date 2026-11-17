@@ -20,8 +20,8 @@ import { probeDataUrl } from './probe-image'
 
 export class LocalizationUnavailableError extends Error {}
 
-function probeMessages(size: { width: number; height: number }, language: 'zh' | 'en'): ChatMessage[] {
-  const { system, user } = buildProbeMessages(language)
+function probeMessages(size: { width: number; height: number }): ChatMessage[] {
+  const { system, user } = buildProbeMessages()
   const hint = `（图片尺寸 ${size.width}×${size.height}）`
   return [
     { role: 'system', content: system },
@@ -54,8 +54,7 @@ async function probeOnce(
   config: ResolvedModelConfig,
   signal?: AbortSignal
 ): Promise<ProbeAttempt> {
-  const first = await requestChat(config, probeMessages(PROBE_FULL_SIZE, config.promptLanguage), {
-    maxTokens: Math.min(Math.max(config.maxTokens, 800), 2048),
+  const first = await requestChat(config, probeMessages(PROBE_FULL_SIZE), {
     timeoutSec: Math.min(config.timeoutSec, 120),
     signal
   })
@@ -63,9 +62,8 @@ async function probeOnce(
   try {
     const second = await requestChat(
       config,
-      probeMessages(PROBE_HALF_SIZE, config.promptLanguage),
+      probeMessages(PROBE_HALF_SIZE),
       {
-        maxTokens: Math.min(Math.max(config.maxTokens, 800), 2048),
         timeoutSec: Math.min(config.timeoutSec, 120),
         signal
       }

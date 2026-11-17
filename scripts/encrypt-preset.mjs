@@ -18,10 +18,8 @@ const groupSize = process.env.PRESET_GROUP_SIZE
 const confidenceThreshold = process.env.PRESET_THRESHOLD
 const localize = process.env.PRESET_LOCALIZE
 const extraBody = process.env.PRESET_EXTRA_BODY || ''
-const maxTokens = process.env.PRESET_MAX_TOKENS
-const imageMaxEdge = process.env.PRESET_IMAGE_MAX_EDGE
-const imageFormat = process.env.PRESET_IMAGE_FORMAT
-const promptLanguage = process.env.PRESET_PROMPT_LANGUAGE
+const itemImageScalePercent = process.env.PRESET_ITEM_IMAGE_SCALE_PERCENT
+const behaviorImageScalePercent = process.env.PRESET_BEHAVIOR_IMAGE_SCALE_PERCENT ?? process.env.PRESET_IMAGE_SCALE_PERCENT
 const coordinateSpaceOverride = process.env.PRESET_COORD_SPACE
 const boxOrderOverride = process.env.PRESET_BOX_ORDER
 const parseDialectOverride = process.env.PRESET_PARSE_DIALECT
@@ -40,8 +38,8 @@ if (!baseUrl || !model) {
       '定位标记相关:',
       '  PRESET_LOCALIZE (true/false)',
       '  PRESET_EXTRA_BODY (JSON 字符串，透传到请求体)',
-      '  PRESET_MAX_TOKENS, PRESET_IMAGE_MAX_EDGE (0=原图), PRESET_IMAGE_FORMAT (png/jpeg)',
-      '  PRESET_PROMPT_LANGUAGE (zh/en)',
+      '  PRESET_ITEM_IMAGE_SCALE_PERCENT (1-100，物品判定与定位共用，默认100%)',
+      '  PRESET_BEHAVIOR_IMAGE_SCALE_PERCENT (1-100，行为识别，默认100%)',
       '  PRESET_COORD_SPACE (auto/normalized_1000/normalized_100/normalized_01/absolute_px)',
       '  PRESET_BOX_ORDER (auto/xyxy/yxyx)',
       '  PRESET_PARSE_DIALECT (auto/json_multi/box_tokens/loc_bins/plain_coords)'
@@ -74,10 +72,6 @@ if (extraBody.trim()) {
     process.exit(1)
   }
 }
-if (Number.isFinite(Number(maxTokens))) runtime.maxTokens = Number(maxTokens)
-if (Number.isFinite(Number(imageMaxEdge))) runtime.imageMaxEdge = Number(imageMaxEdge)
-if (imageFormat === 'png' || imageFormat === 'jpeg') runtime.imageFormat = imageFormat
-if (promptLanguage === 'zh' || promptLanguage === 'en') runtime.promptLanguage = promptLanguage
 if (
   ['auto', 'normalized_1000', 'normalized_100', 'normalized_01', 'absolute_px'].includes(
     coordinateSpaceOverride
@@ -95,6 +89,8 @@ if (
 }
 
 const defaults = {}
+if (Number.isFinite(Number(itemImageScalePercent))) defaults.itemImageScalePercent = Number(itemImageScalePercent)
+if (Number.isFinite(Number(behaviorImageScalePercent))) defaults.behaviorImageScalePercent = Number(behaviorImageScalePercent)
 if (Number.isFinite(Number(intervalSec))) defaults.intervalSec = Number(intervalSec)
 if (items && items.trim()) defaults.prohibitedItems = items.split(',').map((id) => id.trim()).filter(Boolean)
 if (analysisMode === 'single' || analysisMode === 'group') defaults.analysisMode = analysisMode

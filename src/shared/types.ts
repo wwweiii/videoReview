@@ -5,7 +5,8 @@ import type {
   ParseDialect,
   RegionBox
 } from './localization/profile'
-import type { PromptLanguage } from './localization/prompts'
+import type { JudgmentImageOptions, TaskJudgmentImageOptions } from './image'
+import type { FrameStats } from './task'
 
 export type ModelMode = 'preset' | 'custom'
 export type AnalysisMode = 'single' | 'group'
@@ -15,6 +16,8 @@ export interface BehaviorAnalysisConfig {
   windowSec: number
   strideSec: number
   fps: number
+  /** 创建任务时固定的图片缩放比例；旧任务缺省为 100%。 */
+  imageScalePercent?: number
   /** 创建行为任务时从设置复制的行为名称快照。 */
   behaviors: string[]
 }
@@ -24,7 +27,7 @@ export interface BehaviorItem {
   label: string
 }
 
-/** 内置违禁物（固定清单，不可删除/取消勾选） */
+/** 预设违禁物（显示即启用，取消后可按名称重新添加） */
 export interface ProhibitedItem {
   id: string
   label: string
@@ -54,6 +57,8 @@ export type RiskLevel = 'high' | 'medium' | 'low' | 'none'
 
 /** 开发者模式下保留的一次模型调用完整轨迹。 */
 export interface ModelCallTrace {
+  queueMs?: number
+  requestBytes?: number
   operation: string
   startedAt: string
   finishedAt: string
@@ -66,6 +71,22 @@ export interface ModelCallTrace {
   completionTokens: number | null
   totalTokens: number | null
   error: string
+}
+
+export interface ModelCallTraceRecord extends ModelCallTrace {
+  id: string
+  model: string
+  taskId: string | null
+}
+
+export interface ModelCallTraceSummary extends Omit<ModelCallTraceRecord, 'requestBody' | 'responseBody'> {
+  taskName?: string
+}
+
+export interface ModelCallTracePage {
+  items: ModelCallTraceSummary[]
+  total: number
+  nextBefore: string | null
 }
 
 /* ------------------------------ 定位标记 ------------------------------ */
@@ -107,8 +128,10 @@ export interface VideoFileInfo {
 }
 
 export interface AnalysisConfig {
+  /** 物品判定与定位共用的图片配置快照。 */
+  judgmentImage?: TaskJudgmentImageOptions
   intervalSec: number
-  /** 勾选的检测物品 id（内置四项固定包含 + 选中的自定义项） */
+  /** 已启用并显示在设置页的检测物品 id */
   prohibitedItems: string[]
   /** 自定义违禁物快照（任务创建时固定，避免后续设置变动影响历史任务） */
   customProhibitedItems: CustomProhibitedItem[]
@@ -122,6 +145,8 @@ export interface AnalysisConfig {
 }
 
 export interface FrameRecord {
+  /** 独立保存的原始响应与调用记录的内容摘要。 */
+  detailRef?: string
   index: number
   timestampMs: number
   fileName: string
@@ -149,6 +174,8 @@ export interface FrameRecord {
 }
 
 export interface TaskRecord {
+  schemaVersion?: number
+  stats?: FrameStats
   /** 当前会话的落盘错误；恢复保存后清空。 */
   saveError?: string
   id: string
@@ -171,6 +198,7 @@ export interface TaskRecord {
 }
 
 export interface TaskSummary {
+  hasUnfinishedResults?: boolean
   saveError?: string
   id: string
   kind?: TaskKind
@@ -202,12 +230,6 @@ export interface CustomModelPublic {
   hasApiKey: boolean
   /** 透传给服务端的额外请求体（JSON 字符串） */
   extraBody: string
-  /** 单次请求 token 上限 */
-  maxTokens: number
-  /** 发送给模型的图片长边上限（0 = 原图） */
-  imageMaxEdge: number
-  imageFormat: 'png' | 'jpeg'
-  promptLanguage: PromptLanguage
   /** 坐标空间手动覆盖（auto = 由探针决定） */
   coordinateSpaceOverride: 'auto' | CoordinateSpace
   /** 轴序手动覆盖 */
@@ -217,10 +239,12 @@ export interface CustomModelPublic {
 }
 
 export interface PublicSettings {
+  requestConcurrency: number
+  judgmentImage: JudgmentImageOptions
   modelMode: ModelMode
   presetAvailable: boolean
   customModel: CustomModelPublic
-  /** 是否记录并在任务抽屉中显示模型调用轨迹。 */
+  /** 是否启用模型调试配置并记录调用轨迹。 */
   developerMode: boolean
   intervalSec: number
   prohibitedItems: string[]
@@ -235,6 +259,7 @@ export interface PublicSettings {
   behaviorStrideSec: number
   /** 行为识别每秒采样帧数 */
   behaviorFps: number
+  behaviorImageScalePercent: number
 }
 
 export interface CustomModelInput {
@@ -242,16 +267,14 @@ export interface CustomModelInput {
   model: string
   apiKey?: string
   extraBody?: string
-  maxTokens?: number
-  imageMaxEdge?: number
-  imageFormat?: 'png' | 'jpeg'
-  promptLanguage?: PromptLanguage
   coordinateSpaceOverride?: 'auto' | CoordinateSpace
   boxOrderOverride?: 'auto' | BoxOrder
   parseDialectOverride?: 'auto' | ParseDialect
 }
 
 export interface SaveSettingsInput {
+  requestConcurrency?: number
+  judgmentImage?: JudgmentImageOptions
   /** 按设置分区保存，省略时兼容完整设置写入。 */
   section?: 'items' | 'behavior' | 'model'
   modelMode: ModelMode
@@ -267,10 +290,13 @@ export interface SaveSettingsInput {
   behaviorWindowSec: number
   behaviorStrideSec: number
   behaviorFps: number
+  behaviorImageScalePercent?: number
 }
 
 export interface TestModelInput {
   modelMode: ModelMode
+  /** 测试连接使用界面当前开关，避免自动保存防抖期间读取旧值。 */
+  developerMode?: boolean
   customModel: CustomModelInput
 }
 
@@ -305,8 +331,13 @@ export interface ModelProbeResult {
 
 export type TaskEvent =
   | { kind: 'summary'; summary: TaskSummary }
-  | { kind: 'frame'; summary: TaskSummary; frame: FrameRecord }
-  | { kind: 'behavior-window'; summary: TaskSummary; window: BehaviorWindowRecord }
+  | { kind: 'results'; summary: TaskSummary; frames: FrameRecord[]; windows: BehaviorWindowRecord[] }
+
+export interface FrameDiagnostics {
+  rawResponse: string
+  regionRaw: string
+  callTraces: ModelCallTrace[]
+}
 
 /** 一个片段对应一次时序判定；继承通用判定字段，定位字段不用于行为审核。 */
 export interface BehaviorWindowRecord extends FrameRecord {

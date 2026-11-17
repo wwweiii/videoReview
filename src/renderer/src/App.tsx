@@ -1,6 +1,7 @@
 import { Loader2, RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { isTaskTerminal } from '@shared/task'
+import { applyResultPatches, summaryStats } from '@shared/task-view'
 import type { PublicSettings, TaskEvent, TaskKind, TaskRecord, TaskSummary } from '@shared/types'
 import { Sidebar, type MainView } from './components/layout/Sidebar'
 import type { SettingsSection } from './components/settings/SettingsNav'
@@ -44,7 +45,7 @@ type View =
 function upsertTask(list: TaskSummary[], summary: TaskSummary): TaskSummary[] {
   const next = [...list]
   const index = next.findIndex((task) => task.id === summary.id)
-  if (index >= 0) next[index] = summary
+  if (index >= 0) { next[index] = summary; return next }
   else next.push(summary)
   return next.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
 }
@@ -169,6 +170,7 @@ export default function App(): React.JSX.Element {
         if (!previous) return previous
         const next: TaskRecord = {
           ...previous,
+          stats: summaryStats(event.summary),
           status: event.summary.status,
           progress: event.summary.progress,
           phaseMessage: event.summary.phaseMessage,
@@ -176,19 +178,9 @@ export default function App(): React.JSX.Element {
           saveError: event.summary.saveError,
           updatedAt: event.summary.updatedAt
         }
-        if (event.kind === 'frame') {
-          const frames = [...next.frames]
-          const index = frames.findIndex((frame) => frame.index === event.frame.index)
-          if (index >= 0) frames[index] = event.frame
-          else frames.push(event.frame)
-          next.frames = frames
-        }
-        if (event.kind === 'behavior-window') {
-          const windows = [...(next.behaviorWindows ?? [])]
-          const index = windows.findIndex((window) => window.index === event.window.index)
-          if (index >= 0) windows[index] = event.window
-          else windows.push(event.window)
-          next.behaviorWindows = windows.sort((a, b) => a.index - b.index)
+        if (event.kind === 'results') {
+          next.frames = applyResultPatches(next.frames, event.frames)
+          if (event.windows.length) next.behaviorWindows = applyResultPatches(next.behaviorWindows ?? [], event.windows)
         }
         return next
       })
@@ -311,7 +303,6 @@ export default function App(): React.JSX.Element {
           <TaskDetailPage
             task={detailTask}
             loading={detailLoading}
-            developerMode={settings.developerMode}
             onBack={() => navigate(view.taskKind === 'behavior' ? 'behavior-tasks' : 'tasks')}
             onRefresh={refreshCurrentTask}
             showToast={showToast}

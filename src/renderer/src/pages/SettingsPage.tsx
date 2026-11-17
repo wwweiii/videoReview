@@ -3,6 +3,7 @@ import type { ConnectionTestResult, PublicSettings } from '@shared/types'
 import { BehaviorSettingsSection } from '../components/settings/BehaviorSettingsSection'
 import { ItemSettingsSection } from '../components/settings/ItemSettingsSection'
 import { ModelSection } from '../components/settings/ModelSection'
+import { CallTraceDrawer } from '../components/settings/CallTraceDrawer'
 import { SettingsNav, type SettingsSection } from '../components/settings/SettingsNav'
 import { useSettingsForm } from '../hooks/useSettingsForm'
 import { friendlyError, type ShowToast } from '../lib/ui'
@@ -31,6 +32,7 @@ export function SettingsPage({
 
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null)
+  const [traceOpen, setTraceOpen] = useState(false)
   const formRef = useRef(form)
   const onSavedRef = useRef(onSaved)
   const showToastRef = useRef(showToast)
@@ -42,6 +44,9 @@ export function SettingsPage({
   showToastRef.current = showToast
 
   const payloadKey = JSON.stringify(form.buildSavePayload())
+  useEffect(() => {
+    if (!form.developerMode || section !== 'model') setTraceOpen(false)
+  }, [form.developerMode, section])
 
   useLayoutEffect(() => {
     if (!saverRef.current) {
@@ -73,12 +78,14 @@ export function SettingsPage({
   }, [])
 
   async function testConnection(): Promise<void> {
+    if (form.modelMode === 'custom' && form.developerMode && !form.validateExtraBody()) return
     setTesting(true)
     setTestResult(null)
     try {
       setTestResult(
         await window.framelens.testModel({
           modelMode: form.modelMode,
+          developerMode: form.developerMode,
           customModel: form.buildCustomModel()
         })
       )
@@ -87,6 +94,14 @@ export function SettingsPage({
     } finally {
       setTesting(false)
     }
+  }
+
+  async function openTraces(): Promise<void> {
+    try {
+      saverRef.current?.update(formRef.current.buildSavePayload())
+      await saverRef.current?.flush()
+      if (formRef.current.developerMode) setTraceOpen(true)
+    } catch (error) { showToast('error', friendlyError(error)) }
   }
 
   return (
@@ -116,9 +131,11 @@ export function SettingsPage({
             testing={testing}
             testResult={testResult}
             onTest={() => void testConnection()}
+            onOpenTraces={() => void openTraces()}
           />
         ) : null}
       </div>
+      {section === 'model' && form.developerMode && traceOpen ? <CallTraceDrawer onClose={() => setTraceOpen(false)} /> : null}
     </div>
   )
 }

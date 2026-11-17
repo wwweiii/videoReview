@@ -20,7 +20,7 @@ try {
       build.onResolve({ filter: /\/media\/ffmpeg$/ }, () => ({ path: 'ffmpeg', namespace: 'test' }))
       build.onLoad({ filter: /.*/, namespace: 'test' }, ({ path: name }) => ({ loader: 'js', contents: name === 'electron' ? `
         export const app = {isPackaged:false, getAppPath:()=>process.env.VIDEOREVIEW_DATA_DIR, getPath:()=>process.env.VIDEOREVIEW_DATA_DIR};
-        export const BrowserWindow = {getAllWindows:()=>[]};
+        export const BrowserWindow = {getAllWindows:()=>globalThis.testWindows??[]};
         export const safeStorage = {isEncryptionAvailable:()=>false};
         export const dialog = {};
         const image={isEmpty:()=>false,getSize:()=>({width:640,height:360}),resize:()=>image,toPNG:()=>Buffer.from('test'),toJPEG:()=>Buffer.from('test')};

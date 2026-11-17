@@ -33,15 +33,13 @@ export function TaskDetailPage({
   loading,
   onBack,
   onRefresh,
-  showToast,
-  developerMode
+  showToast
 }: {
   task: TaskRecord | null
   loading: boolean
   onBack: () => void
   onRefresh: () => Promise<void>
   showToast: ShowToast
-  developerMode: boolean
 }): JSX.Element {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
   const [confirmCancel, setConfirmCancel] = useState(false)
@@ -50,7 +48,7 @@ export function TaskDetailPage({
   )
 
   const behavior = task?.kind === 'behavior'
-  const stats = countFrameStats(task ? taskResults(task) : [])
+  const stats = task?.stats ?? countFrameStats(task ? taskResults(task) : [])
   const active = task ? isTaskActive(task.status) : false
 
   const selectedFrame =
@@ -254,7 +252,7 @@ export function TaskDetailPage({
         </div>
       ) : null}
 
-      {behavior ? <BehaviorResults key={task.id} task={task} onRefresh={onRefresh} developerMode={developerMode} /> : <FrameTable
+      {behavior ? <BehaviorResults key={task.id} task={task} onRefresh={onRefresh} /> : <FrameTable
         task={task}
         stats={stats}
         onRefresh={onRefresh}
@@ -275,7 +273,6 @@ export function TaskDetailPage({
               setSelectedIndex(task.frames[selectedPosition + 1].index)
             }
           }}
-          developerMode={developerMode}
         />
       ) : null}
 

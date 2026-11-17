@@ -297,6 +297,10 @@ function buildCompletion(content, model) {
   }
 }
 
+let activeRequests = 0
+let peakRequests = 0
+let outputLimitedRequests = 0
+let nonChineseLocalizationRequests = 0
 const server = http.createServer((req, res) => {
   try {
     if (req.method === 'GET' && req.url === '/health') {
@@ -308,6 +312,10 @@ const server = http.createServer((req, res) => {
         space: SPACE,
         abnormalEvery: ABNORMAL_EVERY,
         delayMs: DELAY_MS,
+        activeRequests,
+        peakRequests,
+        outputLimitedRequests,
+        nonChineseLocalizationRequests,
         counts: { requestCount, probeCount, locateCount, judgmentCount }
       })
       return
@@ -318,6 +326,9 @@ const server = http.createServer((req, res) => {
       return
     }
 
+    activeRequests++
+    peakRequests = Math.max(peakRequests, activeRequests)
+    res.once('close', () => { activeRequests-- })
     const chunks = []
     req.on('data', (chunk) => chunks.push(chunk))
     req.on('end', () => {
@@ -331,6 +342,7 @@ const server = http.createServer((req, res) => {
         }
 
         const messages = Array.isArray(body.messages) ? body.messages : []
+        if (['max_tokens', 'max_completion_tokens', 'max_output_tokens'].some((key) => key in body)) outputLimitedRequests++
         const system = systemText(messages)
         const user = userText(messages)
         const images = countImages(messages)
@@ -338,14 +350,18 @@ const server = http.createServer((req, res) => {
         let content
         if (user.includes('连接成功')) {
           content = '连接成功'
+        } else if (system.includes('你是视频行为审核助手')) {
+          content = JSON.stringify(frameVerdict(false))
         } else {
           const kind = classifyRequest(system, user)
           if (kind === 'probe') {
+            if (!system.includes('能力自检')) nonChineseLocalizationRequests++
             probeCount += 1
             const size =
               parseSizeFromText(user) || parseSizeFromHeader(req) || { ...DEFAULT_SIZE }
             content = serializeBoxes(PROBE_RECTS, DIALECT, SPACE, size)
           } else if (kind === 'locate') {
+            if (!system.includes('视觉定位助手')) nonChineseLocalizationRequests++
             locateCount += 1
             const size =
               parseSizeFromText(user) || parseSizeFromHeader(req) || { ...DEFAULT_SIZE }

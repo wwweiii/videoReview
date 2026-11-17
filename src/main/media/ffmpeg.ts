@@ -1,10 +1,12 @@
 import { spawn, type ChildProcessByStdio } from 'node:child_process'
 import fs from 'node:fs'
+import { imageScaleFilter } from './image-scale'
 import path from 'node:path'
 import type { Readable } from 'node:stream'
 import type { VideoFileInfo } from '@shared/types'
 import { getFfmpegPath, getFramesDir } from '../paths'
 import { logger } from '../logger'
+import { extractionScheduler } from '../runtime/scheduler'
 
 type FFmpegProcess = ChildProcessByStdio<null, Readable, Readable>
 
@@ -143,18 +145,28 @@ export async function probeVideo(
   return info
 }
 
-export async function extractFrames(options: {
+interface ExtractFramesOptions {
   taskId: string
   filePath: string
   durationMs: number
   intervalSec: number
   /** 行为采样独立使用压缩画面；物品抽帧保留原有默认参数。 */
   imageFormat?: 'png' | 'jpeg'
-  maxEdge?: number
+  scalePercent?: number
   startAtZero?: boolean
   signal?: AbortSignal
   onProgress?: (progress: ExtractionProgress) => void
-}): Promise<ExtractedFrame[]> {
+}
+
+export async function extractFrames(options: ExtractFramesOptions): Promise<ExtractedFrame[]> {
+  options.onProgress?.({ percent: 0, message: '等待抽帧资源' })
+  return extractionScheduler.run(options.taskId, options.signal, async () => {
+    options.onProgress?.({ percent: 0, message: '正在抽帧' })
+    return extractFramesNow(options)
+  })
+}
+
+async function extractFramesNow(options: ExtractFramesOptions): Promise<ExtractedFrame[]> {
   const { taskId, filePath, durationMs, intervalSec, signal, onProgress } = options
   const extension = options.imageFormat === 'jpeg' ? 'jpg' : 'png'
   if (signal?.aborted) throw new Error('任务已取消')
@@ -180,9 +192,7 @@ export async function extractFrames(options: {
     [
       ...(options.startAtZero ? ['setpts=PTS-STARTPTS'] : []),
       `fps=1/${intervalSec}${options.startAtZero ? ':start_time=0:round=up' : ''}`,
-      ...(options.maxEdge
-        ? [`scale=w='min(iw,${options.maxEdge})':h='min(ih,${options.maxEdge})':force_original_aspect_ratio=decrease`]
-        : []),
+      ...[imageScaleFilter(options.scalePercent)].filter((filter): filter is string => Boolean(filter)),
       'showinfo'
     ].join(','),
     '-vsync',

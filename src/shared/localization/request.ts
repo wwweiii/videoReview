@@ -21,8 +21,6 @@ export interface ChatMessage {
 }
 
 export interface RequestBodyOptions {
-  maxTokens?: number
-  maxTokensField?: 'max_tokens' | 'max_completion_tokens'
   temperature?: number
   responseFormat?: 'json_object' | null
   /** 透传给服务端的额外字段：chat_template_kwargs / repetition_penalty 等 */
@@ -30,10 +28,8 @@ export interface RequestBodyOptions {
 }
 
 export const DEFAULT_REQUEST_OPTIONS: Required<
-  Pick<RequestBodyOptions, 'maxTokens' | 'maxTokensField' | 'temperature'>
+  Pick<RequestBodyOptions, 'temperature'>
 > = {
-  maxTokens: 1200,
-  maxTokensField: 'max_tokens',
   temperature: 0
 }
 
@@ -42,12 +38,10 @@ export function buildRequestBody(
   messages: ChatMessage[],
   options: RequestBodyOptions = {}
 ): Record<string, unknown> {
-  const field = options.maxTokensField ?? DEFAULT_REQUEST_OPTIONS.maxTokensField
   const body: Record<string, unknown> = {
     model,
     messages,
-    temperature: options.temperature ?? DEFAULT_REQUEST_OPTIONS.temperature,
-    [field]: options.maxTokens ?? DEFAULT_REQUEST_OPTIONS.maxTokens
+    temperature: options.temperature ?? DEFAULT_REQUEST_OPTIONS.temperature
   }
   if (options.responseFormat) {
     body.response_format = { type: options.responseFormat }
@@ -55,6 +49,10 @@ export function buildRequestBody(
   if (options.extraBody && typeof options.extraBody === 'object') {
     Object.assign(body, options.extraBody)
   }
+  // 输出上限统一交给服务端；旧额外请求体中的限制也不能重新带回请求。
+  delete body.max_tokens
+  delete body.max_completion_tokens
+  delete body.max_output_tokens
   return body
 }
 

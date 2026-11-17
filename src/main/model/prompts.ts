@@ -1,5 +1,5 @@
-import fs from 'node:fs'
-import path from 'node:path'
+import { imageDataUrl } from '../media/images'
+import type { TaskJudgmentImageOptions } from '@shared/image'
 import { formatTimeMs } from '@shared/format'
 import { resolveProhibitedItems } from '@shared/items'
 import type { ChatContentPart, ChatMessage } from '@shared/localization/request'
@@ -36,18 +36,14 @@ function systemPrompt(itemIds: string[], customItems: CustomProhibitedItem[]): s
   ].join('\n')
 }
 
-function dataUrlForImage(filePath: string): string {
-  const extension = path.extname(filePath).toLowerCase()
-  const mime = extension === '.jpg' || extension === '.jpeg' ? 'image/jpeg' : 'image/png'
-  return `data:${mime};base64,${fs.readFileSync(filePath).toString('base64')}`
-}
-
-export function buildSingleMessages(
+export async function buildSingleMessages(
   filePath: string,
   timestampMs: number,
   itemIds: string[],
-  customItems: CustomProhibitedItem[]
-): ChatMessage[] {
+  customItems: CustomProhibitedItem[],
+  imageOptions?: TaskJudgmentImageOptions,
+  signal?: AbortSignal
+): Promise<ChatMessage[]> {
   return [
     { role: 'system', content: systemPrompt(itemIds, customItems) },
     {
@@ -59,18 +55,20 @@ export function buildSingleMessages(
         },
         {
           type: 'image_url',
-          image_url: { url: dataUrlForImage(filePath) }
+          image_url: { url: await imageDataUrl(filePath, imageOptions, signal) }
         }
       ]
     }
   ]
 }
 
-export function buildGroupMessages(
+export async function buildGroupMessages(
   frames: Array<{ filePath: string; timestampMs: number }>,
   itemIds: string[],
-  customItems: CustomProhibitedItem[]
-): ChatMessage[] {
+  customItems: CustomProhibitedItem[],
+  imageOptions?: TaskJudgmentImageOptions,
+  signal?: AbortSignal
+): Promise<ChatMessage[]> {
   const content: ChatContentPart[] = [
     {
       type: 'text',
@@ -85,16 +83,16 @@ export function buildGroupMessages(
     }
   ]
 
-  frames.forEach((frame, index) => {
+  for (const [index, frame] of frames.entries()) {
     content.push({
       type: 'text',
       text: `第 ${index} 帧，视频时间 ${formatTimeMs(frame.timestampMs)}：`
     })
     content.push({
       type: 'image_url',
-      image_url: { url: dataUrlForImage(frame.filePath), detail: 'high' }
+      image_url: { url: await imageDataUrl(frame.filePath, imageOptions, signal), detail: 'high' }
     })
-  })
+  }
 
   return [
     { role: 'system', content: systemPrompt(itemIds, customItems) },

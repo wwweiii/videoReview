@@ -1,5 +1,6 @@
 import crypto from 'node:crypto'
 import fs from 'node:fs'
+import { DEFAULT_CONCURRENCY, DEFAULT_TIMEOUT_SEC } from '@shared/defaults'
 import { getPresetPath } from '../paths'
 import { logger } from '../logger'
 
@@ -9,6 +10,8 @@ import { logger } from '../logger'
 const PRESET_KEY_HEX = '8f1d2c5a77e94b46f0d315e2bc8a911d4b6e23f7a05c9d78e6134f2cad9b75e0'
 
 export interface PresetDefaults {
+  itemImageScalePercent?: number
+  behaviorImageScalePercent?: number
   intervalSec?: number
   prohibitedItems?: string[]
   analysisMode?: 'single' | 'group'
@@ -27,10 +30,8 @@ export interface PresetModelConfig {
   extraHeaders: string
   /** 运行时高级配置（可选，用于多客户分发时预置模型适配参数） */
   extraBody?: string
-  maxTokens?: number
-  imageMaxEdge?: number
-  imageFormat?: 'png' | 'jpeg'
-  promptLanguage?: 'zh' | 'en'
+  /** 仅用于迁移旧预设中的行为缩放默认值。 */
+  imageScalePercent?: number
   coordinateSpaceOverride?: 'auto' | 'normalized_1000' | 'normalized_100' | 'normalized_01' | 'absolute_px'
   boxOrderOverride?: 'auto' | 'xyxy' | 'yxyx'
   parseDialectOverride?: 'auto' | 'json_multi' | 'box_tokens' | 'loc_bins' | 'plain_coords' | 'none'
@@ -63,6 +64,8 @@ function decodePreset(): PresetModelConfig | null {
     if (!parsed.baseUrl || !parsed.model) throw new Error('内置预设缺少接口地址或模型名称')
     const rawDefaults = (parsed.defaults ?? {}) as PresetDefaults
     const defaults: PresetDefaults = {}
+    if (Number.isFinite(Number(rawDefaults.itemImageScalePercent))) defaults.itemImageScalePercent = Number(rawDefaults.itemImageScalePercent)
+    if (Number.isFinite(Number(rawDefaults.behaviorImageScalePercent))) defaults.behaviorImageScalePercent = Number(rawDefaults.behaviorImageScalePercent)
     if (Number.isFinite(Number(rawDefaults.intervalSec))) defaults.intervalSec = Number(rawDefaults.intervalSec)
     if (Array.isArray(rawDefaults.prohibitedItems)) {
       defaults.prohibitedItems = rawDefaults.prohibitedItems.filter(
@@ -81,17 +84,13 @@ function decodePreset(): PresetModelConfig | null {
       baseUrl: String(parsed.baseUrl),
       model: String(parsed.model),
       apiKey: parsed.apiKey ? String(parsed.apiKey) : '',
-      concurrency: Number(parsed.concurrency) || 2,
-      timeoutSec: Number(parsed.timeoutSec) || 120,
+      concurrency: Number(parsed.concurrency) || DEFAULT_CONCURRENCY,
+      timeoutSec: Number(parsed.timeoutSec) || DEFAULT_TIMEOUT_SEC,
       extraHeaders: parsed.extraHeaders ? String(parsed.extraHeaders) : '',
       extraBody: parsed.extraBody ? String(parsed.extraBody) : '',
-      maxTokens: Number.isFinite(Number(parsed.maxTokens)) ? Number(parsed.maxTokens) : undefined,
-      imageMaxEdge: Number.isFinite(Number(parsed.imageMaxEdge))
-        ? Number(parsed.imageMaxEdge)
+      imageScalePercent: Number.isFinite(Number(parsed.imageScalePercent))
+        ? Number(parsed.imageScalePercent)
         : undefined,
-      imageFormat: parsed.imageFormat === 'jpeg' ? 'jpeg' : parsed.imageFormat === 'png' ? 'png' : undefined,
-      promptLanguage:
-        parsed.promptLanguage === 'en' ? 'en' : parsed.promptLanguage === 'zh' ? 'zh' : undefined,
       coordinateSpaceOverride: parsed.coordinateSpaceOverride as PresetModelConfig['coordinateSpaceOverride'],
       boxOrderOverride: parsed.boxOrderOverride as PresetModelConfig['boxOrderOverride'],
       parseDialectOverride: parsed.parseDialectOverride as PresetModelConfig['parseDialectOverride'],

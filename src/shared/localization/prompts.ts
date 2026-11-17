@@ -1,5 +1,5 @@
 /**
- * 定位/探针的提示词模板（纯字符串，便于测试与多语言扩展）。
+ * 定位/探针的中文提示词模板（纯字符串，便于测试）。
  *
  * 约定：
  * - 系统提示词里包含「视觉定位助手」标记，便于 mock 服务识别请求类型；
@@ -9,10 +9,7 @@
 
 import type { CoordinateSpace } from './profile'
 
-export type PromptLanguage = 'zh' | 'en'
-
 export interface LocalizePromptInput {
-  language: PromptLanguage
   space: CoordinateSpace
   sentWidth: number
   sentHeight: number
@@ -51,29 +48,6 @@ function coordinateRulesZh(space: CoordinateSpace, width: number, height: number
   ].join('\n')
 }
 
-function coordinateRulesEn(space: CoordinateSpace, width: number, height: number): string {
-  if (space === 'absolute_px') {
-    return [
-      'Coordinate rules (strict):',
-      '1. Origin at top-left, x to the right, y downward.',
-      `2. Use pixel coordinates: [x1, y1, x2, y2] in pixels, within 0 ≤ x ≤ ${width} and 0 ≤ y ≤ ${height}.`,
-      '3. Do not output normalized decimals or percentages.'
-    ].join('\n')
-  }
-  const range =
-    space === 'normalized_1000'
-      ? 'integers in 0..1000'
-      : space === 'normalized_100'
-        ? 'numbers in 0..100'
-        : 'decimals in 0..1 (3 decimal places)'
-  return [
-    'Coordinate rules (strict):',
-    '1. Origin at top-left, x to the right, y downward.',
-    `2. Use normalized coordinates: ${range}, relative to image width and height.`,
-    '3. Each box is [x1, y1, x2, y2] with x1<x2 and y1<y2.'
-  ].join('\n')
-}
-
 const ZH_OUTPUT = [
   '只输出一个合法的 JSON 对象，不要使用 Markdown 代码块，不要添加任何解释文字。',
   'JSON 结构：',
@@ -81,16 +55,8 @@ const ZH_OUTPUT = [
   '如果你的训练格式使用 <box> 之类的特殊标记，也可以直接使用该格式，只要坐标含义正确。'
 ].join('\n')
 
-const EN_OUTPUT = [
-  'Return exactly one valid JSON object, no markdown fences and no extra prose.',
-  'JSON schema:',
-  '{"objects":[{"label":"phone","bbox":[120,340,260,520],"confidence":0.86}]}',
-  'If your native format uses <box> style tokens, you may use it as long as coordinates are correct.'
-].join('\n')
-
 export function buildLocalizeMessages(input: LocalizePromptInput): BuiltMessages {
   const {
-    language,
     space,
     sentWidth,
     sentHeight,
@@ -101,37 +67,7 @@ export function buildLocalizeMessages(input: LocalizePromptInput): BuiltMessages
   } = input
   const focus = (focusLabels ?? []).filter(Boolean)
   const targets = focus.length > 0 ? focus : itemLabels
-  const items = targets.join(language === 'zh' ? '、' : ', ')
-
-  if (language === 'en') {
-    const system = [
-      'You are a visual localization assistant. Your only task is to locate specified objects in the given image and output the bounding box of each object.',
-      '',
-      coordinateRulesEn(space, sentWidth, sentHeight),
-      '',
-      'Annotation rules:',
-      '1. Only annotate clearly visible, verifiable physical objects; annotate each object once.',
-      '2. Text, screen content, posters, reflections and mirror images are not physical objects; do not annotate them.',
-      '3. Boxes should hug the visible outline of the object, not a large background area; if occluded, box the visible part only.',
-      '4. Output every clearly visible, verifiable target, ordered by confidence from high to low.',
-      '5. If no target object is present, return {"objects": []}. Never guess a location.',
-      focus.length > 0
-        ? `6. The frame has already been judged abnormal for: ${items}. Only locate these objects. Do not output boxes for other objects, and do not substitute a different object when the target is missing.`
-        : '',
-      '',
-      EN_OUTPUT
-    ]
-      .filter(Boolean)
-      .join('\n')
-    const user = [
-      `This is a frame of a ${scene || 'video'} at ${timestampText}, image size ${sentWidth}x${sentHeight}.`,
-      focus.length > 0
-        ? `Locate only these judged objects: ${items}. Return {"objects": []} if they are not visible.`
-        : `Locate the following objects: ${items}.`,
-      'Return JSON only.'
-    ].join(' ')
-    return { system, user }
-  }
+  const items = targets.join('、')
 
   const system = [
     `你是一名视觉定位助手。你的唯一任务是：在给定的一张${scene || '视频'}画面中，找出指定物品，并输出每个物品的外接矩形框。`,
@@ -165,19 +101,7 @@ export function buildLocalizeMessages(input: LocalizePromptInput): BuiltMessages
 }
 
 /** 探针提示词：不指定坐标空间，让模型用训练时的原生表示 */
-export function buildProbeMessages(language: PromptLanguage = 'zh'): BuiltMessages {
-  if (language === 'en') {
-    return {
-      system: [
-        'You are an image localization self-check tool. The image contains several colored rectangles.',
-        'Return only a JSON array, no explanation.',
-        'Each element: {"label":"red","bbox":[x1,y1,x2,y2]}',
-        'Use the native coordinate representation you were trained with. Do not convert coordinates.',
-        'Marker: capability self-check.'
-      ].join('\n'),
-      user: 'Locate all colored rectangles in the image. Return JSON only.'
-    }
-  }
+export function buildProbeMessages(): BuiltMessages {
   return {
     system: [
       '你是图像定位能力自检器（能力自检）。图中有若干彩色矩形。',

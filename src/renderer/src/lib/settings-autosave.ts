@@ -5,13 +5,14 @@ export interface SettingsSaveState { status: 'saved' | 'pending' | 'saving' | 'e
 const sections: Section[] = ['items', 'behavior', 'model']
 
 function sectionKey(input: SaveSettingsInput, section: Section): string {
-  if (section === 'model') return JSON.stringify([input.modelMode, input.developerMode, input.customModel])
+  if (section === 'model') return JSON.stringify([input.modelMode, input.developerMode, input.customModel, input.requestConcurrency])
   if (section === 'behavior') return JSON.stringify([
-    input.behaviorItems, input.behaviorWindowSec, input.behaviorStrideSec, input.behaviorFps
+    input.behaviorItems, input.behaviorWindowSec, input.behaviorStrideSec, input.behaviorFps,
+    input.behaviorImageScalePercent
   ])
   return JSON.stringify([
     input.intervalSec, input.prohibitedItems, input.customProhibitedItems,
-    input.analysisMode, input.groupSize, input.localize
+    input.analysisMode, input.groupSize, input.localize, input.judgmentImage
   ])
 }
 

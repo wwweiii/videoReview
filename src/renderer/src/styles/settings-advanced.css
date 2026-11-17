@@ -1,14 +1,5 @@
 /* ---------------- 设置页：定位相关新控件 ---------------- */
 
-.form-subhead {
-  margin-top: 30px;
-  padding-top: 24px;
-  border-top: 1px solid var(--line);
-  color: var(--text-2);
-  font-size: 15px;
-  font-weight: 500;
-}
-
 .form-field textarea {
   width: 100%;
   min-height: 92px;

@@ -13,6 +13,7 @@ import {
 import { emitFrame, emitSummary } from './event'
 import type { RegionCounts } from './regions'
 import { flushSave, scheduleSave } from './store'
+import { getTaskStats, updateResultStats, invalidateTaskStats } from './stats'
 
 export async function analyzeFrames(
   task: TaskRecord,
@@ -66,7 +67,8 @@ export async function analyzeFrames(
             task.config.customProhibitedItems,
             path.join(getTaskDir(task.id), 'frames', group[0].fileName),
             group[0].timestampMs,
-            signal
+            signal,
+            task.config.judgmentImage
           )
           if (signal.aborted) return
           applyAnalysis(group[0], analysis, task.config.confidenceThreshold, modelConfig.label)
@@ -79,7 +81,8 @@ export async function analyzeFrames(
               filePath: path.join(getTaskDir(task.id), 'frames', frame.fileName),
               timestampMs: frame.timestampMs
             })),
-            signal
+            signal,
+            task.config.judgmentImage
           )
           const analyses = groupResult.analyses
           if (signal.aborted) return
@@ -98,6 +101,7 @@ export async function analyzeFrames(
           }
         }
         consecutiveFailures = 0
+        for (const frame of group) updateResultStats(task, frame)
         updateProgress(task, hooks?.getCounts?.())
         scheduleSave(task)
         for (const frame of group) {
@@ -125,6 +129,7 @@ export async function analyzeFrames(
           frame.analyzedAt = now
           frame.model = modelConfig.label
         }
+        for (const frame of group) updateResultStats(task, frame)
         updateProgress(task, hooks?.getCounts?.())
         scheduleSave(task)
         for (const frame of group) emitFrame(task, frame)
@@ -167,9 +172,7 @@ function applyAnalysis(
 
 function updateProgress(task: TaskRecord, counts?: RegionCounts): void {
   const total = task.frames.length
-  const processed = task.frames.filter(
-    (frame) => frame.status === 'completed' || frame.status === 'failed'
-  ).length
+  const processed = getTaskStats(task).processed
   if (!counts) {
     task.progress = total > 0 ? Math.round((processed / total) * 1000) / 10 : 0
     task.phaseMessage = '正在分析'
@@ -186,6 +189,7 @@ function updateProgress(task: TaskRecord, counts?: RegionCounts): void {
 }
 
 export function markUnresolvedFailed(task: TaskRecord, reason: string): void {
+  invalidateTaskStats(task)
   const now = new Date().toISOString()
   for (const frame of taskResults(task)) {
     if (frame.regionStatus === 'pending') {

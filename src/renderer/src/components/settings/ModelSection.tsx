@@ -1,6 +1,5 @@
 import { Loader2 } from 'lucide-react'
 import type { JSX } from 'react'
-import { IMAGE_MAX_EDGE_OPTIONS, MAX_TOKENS_OPTIONS } from '@shared/defaults'
 import {
   BOX_ORDER_LABELS,
   COORDINATE_SPACE_LABELS,
@@ -19,14 +18,15 @@ const COORDINATE_SPACE_OPTIONS: CoordinateSpace[] = [
 
 const BOX_ORDER_OPTIONS: BoxOrder[] = ['xyxy', 'yxyx']
 
-/** 设置页「模型配置」子页卡片：预设/自定义切换、连接参数、高级配置、测试连接 */
+/** 设置页「模型配置」子页卡片：预设/自定义切换、连接参数、测试连接与开发者配置 */
 export function ModelSection({
   form,
   presetAvailable,
   hasApiKey,
   testing,
   testResult,
-  onTest
+  onTest,
+  onOpenTraces
 }: {
   form: SettingsForm
   presetAvailable: boolean
@@ -34,6 +34,7 @@ export function ModelSection({
   testing: boolean
   testResult: ConnectionTestResult | null
   onTest: () => void
+  onOpenTraces: () => void
 }): JSX.Element {
   /** 测试连接按钮与结果：自定义模式下紧跟连接参数，预设模式下跟在预设/自定义切换之后。 */
   const testActions = (
@@ -58,6 +59,11 @@ export function ModelSection({
   return (
     <section className="settings-card">
       <h2>模型配置</h2>
+      <label className="form-field">
+        <span>请求上限</span>
+        <input type="number" min={1} max={8} value={form.requestConcurrency}
+          onChange={(event) => form.setRequestConcurrency(Math.max(1, Math.min(8, Number(event.target.value) || 1)))} />
+      </label>
 
       {presetAvailable ? (
         <div className="segmented">
@@ -79,166 +85,38 @@ export function ModelSection({
       ) : null}
 
       {form.modelMode === 'custom' ? (
-        <>
-          <div className="form-grid">
-            <label className="form-field span-2">
-              <span>接口地址</span>
-              <input
-                value={form.baseUrl}
-                onChange={(event) => form.setBaseUrl(event.target.value)}
-                spellCheck={false}
-              />
-            </label>
-            <label className="form-field">
-              <span>模型名称</span>
-              <input
-                value={form.modelName}
-                onChange={(event) => form.setModelName(event.target.value)}
-                spellCheck={false}
-              />
-            </label>
-            <label className="form-field">
-              <span>密钥</span>
-              <input
-                type="password"
-                value={form.apiKey}
-                onChange={(event) => form.setApiKey(event.target.value)}
-                placeholder={hasApiKey ? '已保存' : ''}
-                autoComplete="off"
-                spellCheck={false}
-              />
-            </label>
-          </div>
+        <div className="form-grid">
+          <label className="form-field span-2">
+            <span>接口地址</span>
+            <input
+              value={form.baseUrl}
+              onChange={(event) => form.setBaseUrl(event.target.value)}
+              spellCheck={false}
+            />
+          </label>
+          <label className="form-field">
+            <span>模型名称</span>
+            <input
+              value={form.modelName}
+              onChange={(event) => form.setModelName(event.target.value)}
+              spellCheck={false}
+            />
+          </label>
+          <label className="form-field">
+            <span>密钥</span>
+            <input
+              type="password"
+              value={form.apiKey}
+              onChange={(event) => form.setApiKey(event.target.value)}
+              placeholder={hasApiKey ? '已保存' : ''}
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </label>
+        </div>
+      ) : null}
 
-          {testActions}
-
-          <div className="form-subhead">高级配置</div>
-          <div className="form-grid">
-            <label className="form-field span-2">
-              <span>额外请求体（JSON 对象）</span>
-              <textarea
-                value={form.extraBody}
-                onChange={(event) => form.setExtraBody(event.target.value)}
-                placeholder='例如 {"chat_template_kwargs":{"enable_thinking":false}}'
-                spellCheck={false}
-                rows={3}
-              />
-            </label>
-
-            <label className="form-field">
-              <span>最大 token</span>
-              <input
-                type="number"
-                min={128}
-                max={32768}
-                step={1}
-                list="max-token-options"
-                value={form.maxTokens}
-                onChange={(event) =>
-                  form.setMaxTokens(event.target.value === '' ? 0 : Number(event.target.value))
-                }
-              />
-              <datalist id="max-token-options">
-                {MAX_TOKENS_OPTIONS.map((option) => (
-                  <option key={option} value={option} />
-                ))}
-              </datalist>
-            </label>
-
-            <label className="form-field">
-              <span>定位图片长边</span>
-              <select
-                value={String(form.imageMaxEdge)}
-                onChange={(event) => form.setImageMaxEdge(Number(event.target.value))}
-              >
-                {IMAGE_MAX_EDGE_OPTIONS.map((edge) => (
-                  <option key={edge} value={edge}>
-                    {edge === 0 ? '自动（1120 px）' : `${edge} px`}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <div className="form-field">
-              <span>定位图片格式</span>
-              <div className="segmented">
-                <button
-                  type="button"
-                  className={form.imageFormat === 'png' ? 'is-active' : ''}
-                  onClick={() => form.setImageFormat('png')}
-                >
-                  PNG
-                </button>
-                <button
-                  type="button"
-                  className={form.imageFormat === 'jpeg' ? 'is-active' : ''}
-                  onClick={() => form.setImageFormat('jpeg')}
-                >
-                  JPEG
-                </button>
-              </div>
-            </div>
-
-            <div className="form-field">
-              <span>提示词语言</span>
-              <div className="segmented">
-                <button
-                  type="button"
-                  className={form.promptLanguage === 'zh' ? 'is-active' : ''}
-                  onClick={() => form.setPromptLanguage('zh')}
-                >
-                  中文
-                </button>
-                <button
-                  type="button"
-                  className={form.promptLanguage === 'en' ? 'is-active' : ''}
-                  onClick={() => form.setPromptLanguage('en')}
-                >
-                  English
-                </button>
-              </div>
-            </div>
-
-            <label className="form-field">
-              <span>坐标空间</span>
-              <select
-                value={form.coordinateSpaceOverride}
-                onChange={(event) =>
-                  form.setCoordinateSpaceOverride(
-                    event.target.value as 'auto' | CoordinateSpace
-                  )
-                }
-              >
-                <option value="auto">自动探测</option>
-                {COORDINATE_SPACE_OPTIONS.map((space) => (
-                  <option key={space} value={space}>
-                    {COORDINATE_SPACE_LABELS[space]}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="form-field">
-              <span>轴序</span>
-              <select
-                value={form.boxOrderOverride}
-                onChange={(event) =>
-                  form.setBoxOrderOverride(event.target.value as 'auto' | BoxOrder)
-                }
-              >
-                <option value="auto">自动探测</option>
-                {BOX_ORDER_OPTIONS.map((order) => (
-                  <option key={order} value={order}>
-                    {BOX_ORDER_LABELS[order]}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-        </>
-      ) : (
-        testActions
-      )}
+      {testActions}
 
       <div className="form-field developer-mode-field">
         <span>开发者模式</span>
@@ -255,6 +133,62 @@ export function ModelSection({
           </button>
         </div>
       </div>
+
+      {form.modelMode === 'custom' && form.developerMode ? (
+        <div className="form-grid">
+          <label className="form-field span-2">
+            <span>额外请求体（JSON 对象）</span>
+            <textarea
+              value={form.extraBody}
+              onChange={(event) => form.setExtraBody(event.target.value)}
+              placeholder='例如 {"chat_template_kwargs":{"enable_thinking":false}}'
+              spellCheck={false}
+              rows={3}
+            />
+          </label>
+
+          <label className="form-field">
+            <span>坐标空间</span>
+            <select
+              value={form.coordinateSpaceOverride}
+              onChange={(event) =>
+                form.setCoordinateSpaceOverride(
+                  event.target.value as 'auto' | CoordinateSpace
+                )
+              }
+            >
+              <option value="auto">自动探测</option>
+              {COORDINATE_SPACE_OPTIONS.map((space) => (
+                <option key={space} value={space}>
+                  {COORDINATE_SPACE_LABELS[space]}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="form-field">
+            <span>轴序</span>
+            <select
+              value={form.boxOrderOverride}
+              onChange={(event) =>
+                form.setBoxOrderOverride(event.target.value as 'auto' | BoxOrder)
+              }
+            >
+              <option value="auto">自动探测</option>
+              {BOX_ORDER_OPTIONS.map((order) => (
+                <option key={order} value={order}>
+                  {BOX_ORDER_LABELS[order]}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      ) : null}
+      {form.developerMode ? (
+        <div className="settings-actions">
+          <button type="button" className="button button-secondary" onClick={onOpenTraces}>调用轨迹</button>
+        </div>
+      ) : null}
     </section>
   )
 }

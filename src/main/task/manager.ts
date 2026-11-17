@@ -1,6 +1,10 @@
 import crypto from 'node:crypto'
+import { withTaskContext } from '../runtime/scheduler'
 import type { TaskKind, TaskRecord, TaskSummary } from '@shared/types'
 import { taskResults } from '@shared/behavior'
+import { frameView } from '@shared/task-view'
+import { getTaskStats, invalidateTaskStats } from './stats'
+import { readFrameDiagnostics } from './diagnostics'
 import { getResolvedModelConfig } from '../config/model-config'
 import { getAnalysisConfig, getBehaviorConfig } from '../config/settings'
 import { probeVideo } from '../media/ffmpeg'
@@ -12,7 +16,7 @@ import { failTask, finishTask } from './outcome'
 import { taskSession, type ActiveRun } from './session'
 import {
   allTaskIds, deleteStoredTask, ensureTasksDirectory, flushAllTasks, flushSave,
-  readTask, rememberTask, scheduleSave, validateTaskId
+  readTask, rememberTask, scheduleSave, validateTaskId, readTaskSummary, trimTaskCache
 } from './store'
 import { buildSummary } from './summary'
 import { runBehaviorTask } from './behavior'
@@ -26,6 +30,8 @@ export function initializeTaskManager(): void {
   initialized = true
   ensureTasksDirectory()
   for (const taskId of allTaskIds()) {
+    const summary = readTaskSummary(taskId)
+    if (!summary || (!['extracting', 'analyzing'].includes(summary.status) && !summary.hasUnfinishedResults)) continue
     const task = readTask(taskId)
     if (!task) continue
     if (task.status === 'extracting' || task.status === 'analyzing') {
@@ -43,10 +49,22 @@ export function initializeTaskManager(): void {
 
 export function listTasks(): TaskSummary[] {
   return allTaskIds()
-    .map((taskId) => readTask(taskId))
-    .filter((task): task is TaskRecord => Boolean(task))
+    .map(readTaskSummary)
+    .filter((task): task is TaskSummary => Boolean(task))
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    .map(buildSummary)
+}
+
+export function getTaskView(taskId: string): TaskRecord {
+  const task = getTask(taskId)
+  return { ...task, stats: getTaskStats(task), frames: task.frames.map(frameView),
+    ...(task.behaviorWindows ? { behaviorWindows: task.behaviorWindows.map(frameView) } : {}) }
+}
+
+export async function getFrameDiagnostics(taskId: string, index: number) {
+  if (!Number.isInteger(index) || index < 0) throw new Error('结果编号无效')
+  const frame = taskResults(getTask(taskId)).find((frame) => frame.index === index)
+  if (!frame) throw new Error('结果不存在')
+  return readFrameDiagnostics(taskId, frame)
 }
 
 export function getTask(taskId: string): TaskRecord {
@@ -63,15 +81,18 @@ function assertAcceptingTasks(): void {
 /** 启动、重试和重定位共用生命周期，退出时可以等待所有工作完成。 */
 function launchRun(task: TaskRecord, work: (controller: AbortController) => Promise<void>): void {
   assertAcceptingTasks()
+  rememberTask(task)
+  invalidateTaskStats(task)
   const abortController = new AbortController()
   const run: ActiveRun = { taskId: task.id, abortController, cancelRequested: false, completion: Promise.resolve() }
   taskSession.activeRuns.set(task.id, run)
   run.completion = Promise.resolve()
-    .then(() => work(abortController))
+    .then(() => withTaskContext(task.id, () => work(abortController)))
     .catch((error) => failTask(task, error, run.cancelRequested))
     .finally(() => {
       taskSession.activeRuns.delete(task.id)
       clearSummaryThrottle(task.id)
+      trimTaskCache()
     })
 }
 
@@ -142,6 +163,7 @@ export function relocalizeTask(taskId: string): TaskSummary {
   task.progress = 0
   task.phaseMessage = '正在定位违禁物'
   task.errorMessage = ''
+  invalidateTaskStats(task)
   emitSummary(task, true)
   launchRun(task, async (controller) => {
     await flushSave(task)
@@ -168,6 +190,7 @@ export function retryFailedFrames(taskId: string): TaskSummary {
   for (const frame of failed) {
     Object.assign(frame, {
       status: 'pending', verdict: 'pending', error: '', rawResponse: '', analyzedAt: null,
+      detailRef: undefined, callTraces: [],
       model: '', regions: [], regionStatus: 'none', regionLevel: 'L0', regionError: '', regionRaw: ''
     })
   }
@@ -175,6 +198,7 @@ export function retryFailedFrames(taskId: string): TaskSummary {
   task.progress = 0
   task.phaseMessage = needsExtraction ? '正在重新抽帧' : '正在重试'
   task.errorMessage = ''
+  invalidateTaskStats(task)
   emitSummary(task, true)
   launchRun(task, async (controller) => {
     await flushSave(task)

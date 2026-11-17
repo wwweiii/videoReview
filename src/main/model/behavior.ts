@@ -1,4 +1,4 @@
-import fs from 'node:fs'
+import { imageDataUrl } from '../media/images'
 import path from 'node:path'
 import { BEHAVIOR_CONFIG, behaviorTime } from '@shared/behavior'
 import type { ChatContentPart, ChatMessage } from '@shared/localization/request'
@@ -70,12 +70,13 @@ function describeSampling(window: BehaviorWindowRecord, fps: number): string {
   return `完整窗口按 ${fps} FPS 采样，相邻画面相隔 ${formatSampleInterval(intervalSec)} 秒`
 }
 
-export function buildBehaviorMessages(
+export async function buildBehaviorMessages(
   window: BehaviorWindowRecord,
   framesDir: string,
   behaviorLabels: string[],
-  fps: number = BEHAVIOR_CONFIG.fps
-): ChatMessage[] {
+  fps: number = BEHAVIOR_CONFIG.fps,
+  signal?: AbortSignal
+): Promise<ChatMessage[]> {
   const content: ChatContentPart[] = [{
     type: 'text',
     text: `审核视频 ${behaviorTime(window.timestampMs)} 至 ${behaviorTime(window.endTimestampMs)} 的一个连续片段。` +
@@ -86,7 +87,7 @@ export function buildBehaviorMessages(
     content.push({ type: 'text', text: `第 ${index + 1} 张，视频时间 ${behaviorTime(sample.timestampMs)}：` })
     content.push({
       type: 'image_url',
-      image_url: { url: `data:image/jpeg;base64,${fs.readFileSync(path.join(framesDir, sample.fileName)).toString('base64')}` }
+      image_url: { url: await imageDataUrl(path.join(framesDir, sample.fileName), undefined, signal) }
     })
   }
   return [{
@@ -120,9 +121,6 @@ export async function analyzeBehaviorWindow(
     const parsed = JSON.parse(config.extraBody || '{}')
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) extra = { ...parsed }
   } catch { /* 与原接口一致，忽略无效的额外请求体。 */ }
-  // 独立限制行为请求预算，避免全局额外字段覆盖窗口输出上限。
-  delete extra.max_tokens
-  delete extra.max_completion_tokens
   extra.stream = false
   if (/qwen/i.test(config.model)) {
     const template = extra.chat_template_kwargs
@@ -134,10 +132,9 @@ export async function analyzeBehaviorWindow(
   }
   const { content, traces } = await requestChat(
     { ...config, extraBody: JSON.stringify(extra) },
-    buildBehaviorMessages(window, framesDir, behaviorLabels, fps),
+    () => buildBehaviorMessages(window, framesDir, behaviorLabels, fps, signal),
     {
       signal,
-      maxTokens: Math.min(config.maxTokens, 1200),
       maxAttempts: 1,
       requireComplete: true,
       operation: '行为判定'

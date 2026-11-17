@@ -23,6 +23,7 @@ const api: FramelensApi = {
   startBehaviorReview: (filePath: string): Promise<TaskSummary> =>
     ipcRenderer.invoke('task:startBehavior', filePath),
   listTasks: (): Promise<TaskSummary[]> => ipcRenderer.invoke('task:list'),
+  getFrameDiagnostics: (taskId: string, index: number) => ipcRenderer.invoke('task:diagnostics', taskId, index),
   getTask: (taskId: string): Promise<TaskRecord> => ipcRenderer.invoke('task:get', taskId),
   cancelTask: (taskId: string): Promise<boolean> => ipcRenderer.invoke('task:cancel', taskId),
   retryFailedFrames: (taskId: string): Promise<TaskSummary> =>
@@ -37,6 +38,8 @@ const api: FramelensApi = {
     ipcRenderer.invoke('settings:save', input),
   testModel: (input: TestModelInput): Promise<ConnectionTestResult> =>
     ipcRenderer.invoke('model:test', input),
+  listModelCallTraces: (before?: string) => ipcRenderer.invoke('model:traces', before),
+  getModelCallTrace: (id: string) => ipcRenderer.invoke('model:trace', id),
   probeModel: (input: TestModelInput): Promise<ModelProbeResult> =>
     ipcRenderer.invoke('model:probe', input),
   getPathForFile: (file: File): string => webUtils.getPathForFile(file),

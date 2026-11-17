@@ -1,49 +1,30 @@
 /**
- * 违禁物清单（内置固定项 + 用户自定义项）与标签归一化。
+ * 违禁物清单（可选预设项 + 用户自定义项）与标签归一化。
  *
  * 纯函数与常量，主进程（提示词/结果映射）与渲染进程（设置页）共用；
  * 不依赖 Electron / Node，便于单元验证。
  */
 
 import type { CustomProhibitedItem, ProhibitedItem } from './types'
-import { MAX_CUSTOM_ITEM_LABEL_LENGTH, MAX_CUSTOM_PROHIBITED_ITEMS } from './defaults'
+import {
+  BUILTIN_PROHIBITED_ITEMS,
+  MAX_CUSTOM_ITEM_LABEL_LENGTH,
+  MAX_CUSTOM_PROHIBITED_ITEMS
+} from './defaults'
 
-/**
- * 内置违禁物：固定清单，不可删除、不可取消勾选。
- * 用户只能追加自定义物品；自定义物品可删除。
- */
-export const BUILTIN_PROHIBITED_ITEMS: ProhibitedItem[] = [
-  {
-    id: 'pen',
-    label: '笔',
-    prompt: '笔（钢笔、圆珠笔、签字笔、马克笔等可书写的笔类）',
-    aliases: ['pen', 'ballpoint', '钢笔', '圆珠笔', '签字笔', '中性笔', '铅笔', '马克笔', 'marker']
-  },
-  {
-    id: 'cup',
-    label: '水杯',
-    prompt: '水杯（杯子、茶杯、保温杯等盛水容器）',
-    aliases: ['cup', 'mug', 'glass', 'cup with water', '杯子', '茶杯', '保温杯', '水杯子', '玻璃杯']
-  },
-  {
-    id: 'kettle',
-    label: '水壶',
-    prompt: '水壶（电水壶、保温壶、茶壶等）',
-    aliases: ['kettle', 'teapot', '水壶', '电水壶', '保温壶', '茶壶', '壶', '热水壶']
-  },
-  {
-    id: 'phone',
-    label: '手机',
-    prompt: '手机（包括正在使用、放在桌面或手持的手机）',
-    aliases: ['phone', 'smartphone', 'cellphone', 'mobile', 'mobile phone', '手机', '智能手机', '移动电话']
-  }
-]
+// 保留原导出路径，物品清单与默认值统一在 defaults.ts 维护。
+export { BUILTIN_PROHIBITED_ITEMS, DEFAULT_PROHIBITED_ITEMS } from './defaults'
 
 /** 内置 id → 物品 */
 const PROHIBITED_ITEM_MAP = new Map(BUILTIN_PROHIBITED_ITEMS.map((item) => [item.id, item]))
 
-/** 默认勾选的检测物品（内置四项固定包含） */
-export const DEFAULT_PROHIBITED_ITEMS = BUILTIN_PROHIBITED_ITEMS.map((item) => item.id)
+/** 已启用的物品 id 只保留清单中存在的项；取消后的空列表原样保留。 */
+export function normalizeSelectedItems(rawSelected: unknown, customItems: CustomProhibitedItem[]): string[] {
+  const allowedIds = new Set([...PROHIBITED_ITEM_MAP.keys(), ...customItems.map((item) => item.id)])
+  return Array.isArray(rawSelected)
+    ? [...new Set(rawSelected.filter((id): id is string => typeof id === 'string' && allowedIds.has(id)))]
+    : []
+}
 
 function makeCustomItemId(): string {
   const random = Math.random().toString(36).slice(2, 8)
@@ -66,10 +47,13 @@ export function labelMatchesItem(raw: string, item: ProhibitedItem): boolean {
 }
 
 /**
- * 历史版本内置物品（已从固定清单移除）：
+ * 历史版本内置物品（已从预设清单移除）：
  * 仅用于让旧任务在"重新定位/重试"时还能显示正确中文类别，不参与新任务选择。
  */
 const LEGACY_ITEM_LABELS: Record<string, string> = {
+  pen: '笔',
+  cup: '水杯',
+  kettle: '水壶',
   tablet: '平板电脑',
   laptop: '笔记本电脑',
   camera: '相机',

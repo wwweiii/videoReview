@@ -1,4 +1,5 @@
 import { matchItem } from '@shared/items'
+import type { TaskJudgmentImageOptions } from '@shared/image'
 import type { CustomProhibitedItem, ModelCallTrace, RiskLevel } from '@shared/types'
 import type { ResolvedModelConfig } from '../config/model-config'
 import { requestChat } from './client'
@@ -188,13 +189,14 @@ export async function analyzeSingleFrame(
   customItems: CustomProhibitedItem[],
   filePath: string,
   timestampMs: number,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  imageOptions?: TaskJudgmentImageOptions
 ): Promise<ParsedAnalysis> {
   let lastParseError: Error | null = null
   const allTraces: ModelCallTrace[] = []
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const messages = buildSingleMessages(filePath, timestampMs, itemIds, customItems)
+    const messages = () => buildSingleMessages(filePath, timestampMs, itemIds, customItems, imageOptions, signal)
     const { content, traces } = await requestChat(config, messages, {
       signal,
       requireComplete: true,
@@ -224,11 +226,11 @@ export async function analyzeFrameGroup(
   itemIds: string[],
   customItems: CustomProhibitedItem[],
   frames: Array<{ filePath: string; timestampMs: number }>,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  imageOptions?: TaskJudgmentImageOptions
 ): Promise<{ analyses: Map<number, ParsedAnalysis>; traces: ModelCallTrace[] }> {
-  const messages = buildGroupMessages(frames, itemIds, customItems)
+  const messages = () => buildGroupMessages(frames, itemIds, customItems, imageOptions, signal)
   const { content, traces } = await requestChat(config, messages, {
-    maxTokens: Math.max(700, frames.length * 350),
     signal,
     requireComplete: true,
     operation: '物品分组判定'

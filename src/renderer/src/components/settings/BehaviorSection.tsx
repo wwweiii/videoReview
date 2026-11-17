@@ -6,7 +6,7 @@ import type { SettingsForm } from '../../hooks/useSettingsForm'
 /** 行为识别类别完全由用户设置，不提供内置行为。 */
 export function BehaviorSection({ form }: { form: SettingsForm }): JSX.Element {
   return (
-    <div className="detect-block behavior-settings-block">
+    <div className="detect-block">
       <span className="field-title">识别行为</span>
       <div className="behavior-settings-list">
         {form.behaviorItems.map((item) => (
@@ -28,7 +28,7 @@ export function BehaviorSection({ form }: { form: SettingsForm }): JSX.Element {
         <input
           value={form.behaviorLabel}
           maxLength={MAX_BEHAVIOR_LABEL_LENGTH}
-          placeholder={`添加行为（最多 ${MAX_BEHAVIOR_LABEL_LENGTH} 字，回车确认）`}
+          placeholder="添加行为"
           onChange={(event) => form.setBehaviorLabel(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
