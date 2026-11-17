@@ -1,7 +1,6 @@
 import {
   AlertCircle,
   ArrowLeft,
-  Crosshair,
   Download,
   Loader2,
   RefreshCw,
@@ -43,7 +42,7 @@ export function TaskDetailPage({
 }): JSX.Element {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
   const [confirmCancel, setConfirmCancel] = useState(false)
-  const [busyAction, setBusyAction] = useState<'cancel' | 'retry' | 'export' | 'relocalize' | null>(
+  const [busyAction, setBusyAction] = useState<'cancel' | 'retry' | 'export' | null>(
     null
   )
 
@@ -102,21 +101,6 @@ export function TaskDetailPage({
     }
   }
 
-  async function relocalize(): Promise<void> {
-    if (!task) return
-    setBusyAction('relocalize')
-    try {
-      await flushPendingSettings()
-      await window.framelens.relocalizeTask(task.id)
-      await onRefresh()
-      showToast('success', '已开始重新定位')
-    } catch (error) {
-      showToast('error', friendlyError(error))
-    } finally {
-      setBusyAction(null)
-    }
-  }
-
   async function exportResult(): Promise<void> {
     if (!task) return
     setBusyAction('export')
@@ -149,6 +133,12 @@ export function TaskDetailPage({
     )
   }
 
+  const canRetry = behavior
+    ? stats.failed > 0 || Boolean(task.saveError) || stats.total === 0
+    : task.frames.some((frame) => frame.status === 'failed' || frame.regionStatus === 'failed') ||
+      Boolean(task.saveError) || task.status === 'failed'
+  const retryLabel = behavior ? '重试' : '失败重试'
+
   return (
     <div className="page detail-page">
       <header className="detail-top">
@@ -179,7 +169,8 @@ export function TaskDetailPage({
               <StopCircle size={17} />
               取消
             </button>
-          ) : stats.failed > 0 || task.saveError || stats.total === 0 || task.frames.some((frame) => frame.regionStatus === 'failed') ? (
+          ) : null}
+          {!active && canRetry ? (
             <button
               type="button"
               className="button button-secondary"
@@ -191,23 +182,7 @@ export function TaskDetailPage({
               ) : (
                 <RefreshCw size={17} />
               )}
-              重试
-            </button>
-          ) : null}
-          {!behavior && !active && task.config.localize && stats.abnormal + stats.review > 0 ? (
-            <button
-              type="button"
-              className="button button-secondary"
-              onClick={() => void relocalize()}
-              disabled={busyAction === 'relocalize'}
-              title="使用当前模型配置重新定位异常帧（不重跑判定）"
-            >
-              {busyAction === 'relocalize' ? (
-                <Loader2 size={17} className="spin" />
-              ) : (
-                <Crosshair size={17} />
-              )}
-              重新定位
+              {retryLabel}
             </button>
           ) : null}
           <button
@@ -241,7 +216,7 @@ export function TaskDetailPage({
       {task.saveError ? (
         <div className="notice" role="alert">
           <AlertCircle size={19} />
-          <span>{task.saveError}。请检查磁盘空间和目录权限，恢复后点击重试。</span>
+          <span>{task.saveError}。请检查磁盘空间和目录权限，恢复后点击{retryLabel}。</span>
         </div>
       ) : null}
 

@@ -8,6 +8,7 @@
 > **文档状态**
 >
 > - 本文写于 **P0 阶段**（违禁物定位标记首次落地），记录的是当时的设计推导、代码事实与验证结果。
+> - 当前版本已移除独立的「重新定位」按钮及 `task:relocalize` 接口；下文相关内容仅为历史记录。正常审核的自动定位与失败重试仍保留。
 > - 文中出现的 `src/main/*.ts`、`src/renderer/src/components/*` 等路径与行号均为**当时结构**；当前仓库已完成模块化重构，代码路径以 `src/` 的当前结构为准（主进程见 `src/main/{app,config,model,localization,task,media}/` 与根级 `index.ts`/`ipc.ts`/`paths.ts`/`logger.ts`；共享层见 `src/shared/`）。
 > - 设计结论（两段式判定/定位、探针 + 方言链、分层降级、按需显示框）仍然有效，实现细节与文件位置请以代码为准。
 > - §9 为 P0 及后续轮次的实现记录，可作为功能行为的补充说明；引用原始调研见 `docs/archive/research/`。

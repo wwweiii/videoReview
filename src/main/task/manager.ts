@@ -78,7 +78,7 @@ function assertAcceptingTasks(): void {
   if (taskSession.shuttingDown) throw new Error('应用正在退出，请稍后重试')
 }
 
-/** 启动、重试和重定位共用生命周期，退出时可以等待所有工作完成。 */
+/** 启动和重试共用生命周期，退出时可以等待所有工作完成。 */
 function launchRun(task: TaskRecord, work: (controller: AbortController) => Promise<void>): void {
   assertAcceptingTasks()
   rememberTask(task)
@@ -142,38 +142,6 @@ async function startTask(filePath: string, kind: TaskKind): Promise<TaskSummary>
   return buildSummary(task)
 }
 
-/** 只重跑定位，不重跑判定。 */
-export function relocalizeTask(taskId: string): TaskSummary {
-  assertAcceptingTasks()
-  const task = getTask(taskId)
-  if (taskSession.activeRuns.has(taskId)) throw new Error('任务正在处理')
-  if (task.kind === 'behavior') throw new Error('行为任务不使用物品定位')
-  if (!task.config.localize) throw new Error('当前任务未开启定位标记')
-  const targets = regionCandidateFrames(task)
-  if (targets.length === 0) throw new Error('没有需要定位的异常帧')
-  const modelConfig = getResolvedModelConfig()
-  for (const frame of targets) {
-    frame.regions = []
-    frame.regionStatus = 'pending'
-    frame.regionLevel = 'L0'
-    frame.regionError = ''
-    frame.regionRaw = ''
-  }
-  task.status = 'analyzing'
-  task.progress = 0
-  task.phaseMessage = '正在定位违禁物'
-  task.errorMessage = ''
-  invalidateTaskStats(task)
-  emitSummary(task, true)
-  launchRun(task, async (controller) => {
-    await flushSave(task)
-    await localizeFrames(task, modelConfig, controller.signal, { onlyLocalize: true })
-    if (controller.signal.aborted) throw new Error('任务已取消')
-    await finishTask(task, controller.signal)
-  })
-  return buildSummary(task)
-}
-
 export function retryFailedFrames(taskId: string): TaskSummary {
   assertAcceptingTasks()
   const task = getTask(taskId)
@@ -181,12 +149,14 @@ export function retryFailedFrames(taskId: string): TaskSummary {
   const results = taskResults(task)
   const failed = results.filter((frame) => frame.status === 'failed')
   const needsExtraction = results.length === 0
-  const needsRegions = task.kind !== 'behavior' && task.config.localize &&
-    regionCandidateFrames(task).some((frame) => frame.regionStatus !== 'ok')
-  if (!needsExtraction && failed.length === 0 && !needsRegions && !task.saveError) {
+  const failedRegions = task.kind !== 'behavior' && task.config.localize
+    ? regionCandidateFrames(task).filter((frame) => frame.regionStatus === 'failed')
+    : []
+  if (!needsExtraction && failed.length === 0 && failedRegions.length === 0 && !task.saveError) {
     throw new Error('没有需要重试的结果')
   }
   const modelConfig = getResolvedModelConfig()
+  const retryIndices = new Set([...failed, ...failedRegions].map((frame) => frame.index))
   for (const frame of failed) {
     Object.assign(frame, {
       status: 'pending', verdict: 'pending', error: '', rawResponse: '', analyzedAt: null,
@@ -208,7 +178,7 @@ export function retryFailedFrames(taskId: string): TaskSummary {
       await runTask(task, modelConfig, controller)
     } else {
       await analyzeFrames(task, modelConfig, controller.signal, new Set(failed.map((frame) => frame.index)))
-      await localizeFrames(task, modelConfig, controller.signal, { onlyLocalize: false, onlyPendingRegions: true })
+      await localizeFrames(task, modelConfig, controller.signal, retryIndices)
       if (controller.signal.aborted) throw new Error('任务已取消')
       await finishTask(task, controller.signal)
     }

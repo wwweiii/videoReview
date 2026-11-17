@@ -41,7 +41,7 @@ export async function runTask(
 
     // 判定与定位重叠：判定出一帧异常就立刻入队定位，框不用等全部判定跑完
     const runner = task.config.localize
-      ? createRegionRunner(task, modelConfig, abortController.signal, false)
+      ? createRegionRunner(task, modelConfig, abortController.signal)
       : null
     try {
       await analyzeFrames(

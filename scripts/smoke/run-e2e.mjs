@@ -1,5 +1,5 @@
 /**
- * 端到端冒烟：真实 ffmpeg 抽帧 → 判定 → 定位 → 落盘 → 重定位。
+ * 端到端冒烟：真实 ffmpeg 抽帧 → 判定 → 定位 → 落盘 → 失败重试。
  *
  * 用法：npm run smoke:localization
  * 依赖：mock 模型服务（scripts/mock-model-server.mjs）与项目内置 ffmpeg。

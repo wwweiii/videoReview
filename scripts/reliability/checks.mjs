@@ -528,6 +528,15 @@ test('抽帧阶段取消会等待收尾，零帧任务可以重新抽帧', async
     assert.equal(getTask(summary.id).status, 'completed')
   } finally { globalThis.extractionHook = undefined }
 })
+test('失败重试不把模型不支持定位的成功帧当成失败', () => {
+  const frame = { ...newFrame(0, 0, 'a.png'), status: 'completed', verdict: 'abnormal', regionStatus: 'unsupported' }
+  const value = task({ config: { ...initial, localize: true }, frames: [frame], status: 'completed' })
+  rememberTask(value)
+  assert.throws(() => retryFailedFrames(value.id), /没有需要重试的结果/)
+  assert.equal(frame.regionStatus, 'unsupported')
+  assert.equal(taskSession.activeRuns.has(value.id), false)
+})
+
 test('判定阶段取消保留终态，未完成帧不再保持 pending', async () => {
   const entered = deferred()
   globalThis.fetch = async (_url, options) => { entered.resolve(); return abortable(options.signal) }
@@ -553,7 +562,7 @@ test('定位停止等待在途请求，不会在终态后回写结果', async ()
     await abortable(options.signal).catch(() => release.promise)
     return response({ objects: [{ label: '手机', bbox: [100, 100, 300, 300] }] })
   }
-  const runner = createRegionRunner(value, config, new AbortController().signal, false)
+  const runner = createRegionRunner(value, config, new AbortController().signal)
   runner.enqueue(frame); await entered.promise
   let stopped = false
   const stopping = runner.abort().then(() => { stopped = true })

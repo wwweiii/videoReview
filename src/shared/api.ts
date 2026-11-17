@@ -26,8 +26,6 @@ export interface FramelensApi {
   getFrameDiagnostics(taskId: string, frameIndex: number): Promise<FrameDiagnostics>
   cancelTask(taskId: string): Promise<boolean>
   retryFailedFrames(taskId: string): Promise<TaskSummary>
-  /** 只重跑定位（不重跑判定），用于换模型/补标 */
-  relocalizeTask(taskId: string): Promise<TaskSummary>
   deleteTask(taskId: string): Promise<DeleteTaskResult>
   exportTaskCsv(taskId: string): Promise<ExportResult>
   saveSettings(input: SaveSettingsInput): Promise<PublicSettings>

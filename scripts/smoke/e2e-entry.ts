@@ -1,6 +1,6 @@
 /**
  * Electron 端到端冒烟（scripts/smoke/run-e2e.mjs 的入口）：
- * 真实 ffmpeg 抽帧 → 判定 → 定位 → task.json → 重定位。
+ * 真实 ffmpeg 抽帧 → 判定 → 定位 → task.json → 失败重试。
  */
 import { app, nativeImage } from 'electron'
 import fs from 'node:fs'
@@ -21,7 +21,7 @@ import {
   deleteTask,
   initializeTaskManager,
   listTasks,
-  relocalizeTask,
+  retryFailedFrames,
   startReview,
   startBehaviorReview
 } from '../../src/main/task/manager'
@@ -248,16 +248,6 @@ async function main(): Promise<void> {
     check('实际判定请求使用原图内容并保留图片摘要与排队耗时', diagnostic.callTraces.some((trace) => trace.requestBody.includes(`sha256=${originalHash}`) && trace.queueMs !== undefined))
     check('任务清单与普通 IPC 结果不携带调用正文', !fs.readFileSync(taskFile, 'utf8').includes('base64,') && getTaskView(task.id).frames.every((frame) => !frame.callTraces.length && !frame.rawResponse))
 
-    const relocalizeSummary = await relocalizeTask(summary.id)
-    check('relocalize 接受任务', Boolean(relocalizeSummary.id))
-    const relocalizeStatus = await waitTerminal(summary.id)
-    check('重定位后回到终态', relocalizeStatus === 'completed', relocalizeStatus)
-    const afterTask = getTask(summary.id)
-    const afterLocated = afterTask.frames.filter(
-      (frame) => frame.regionStatus === 'ok' && frame.regions.length > 0
-    )
-    check('重定位后仍有框', afterLocated.length >= 1, afterLocated.length)
-
     const uiTaskId = await verifySettingsUi(videoPath, check)
     const uiStatus = await waitTerminal(uiTaskId)
     check('界面启动的任务完成并落盘', uiStatus === 'completed', uiStatus)
@@ -290,11 +280,18 @@ async function main(): Promise<void> {
     check('行为模型请求直接使用按 75% 抽取的图片', behaviorDiagnostic.callTraces.some((trace) => trace.operation === '行为判定' && trace.requestBody.includes(`sha256=${behaviorHash}`)))
 
     saveSettings({ ...settingsAfterUi, section: 'items', judgmentImage: { scalePercent: 100 } })
-    relocalizeTask(uiTaskId)
-    await waitTerminal(uiTaskId)
+    const beforeRetry = await (await fetch(`http://127.0.0.1:${port}/health`)).json()
+    localizedFrame.regionStatus = 'failed'
+    localizedFrame.regionError = '模拟定位失败'
+    localizedFrame.regions = []
+    retryFailedFrames(uiTaskId)
+    const retryStatus = await waitTerminal(uiTaskId)
+    const afterRetry = await (await fetch(`http://127.0.0.1:${port}/health`)).json()
+    check('失败重试补齐定位并回到完成状态', retryStatus === 'completed' && localizedFrame.regionStatus === 'ok' && localizedFrame.regions.length > 0, retryStatus)
+    check('失败重试不重跑成功判定及成功定位', afterRetry.counts.judgmentCount === beforeRetry.counts.judgmentCount && afterRetry.counts.locateCount === beforeRetry.counts.locateCount + 1)
     const retriedDiagnostic = await getFrameDiagnostics(uiTaskId, localizedFrame.index)
     const retriedTrace = retriedDiagnostic.callTraces.filter((trace) => trace.operation === '违禁物定位').at(-1)
-    check('修改设置后重定位仍使用任务的 50% 图片快照', retriedTrace?.requestBody.includes(`sha256=${locatedHash}`) === true)
+    check('修改设置后失败重试仍使用任务的 50% 图片快照', retriedTrace?.requestBody.includes(`sha256=${locatedHash}`) === true)
     saveSettings(settingsAfterUi)
 
     const parallel = await Promise.all([startReview(videoPath), startReview(videoPath), startReview(videoPath)])

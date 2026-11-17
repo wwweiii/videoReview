@@ -290,8 +290,10 @@
 
 .pagination {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   padding: 14px 24px;
   border-top: 1px solid var(--line);
   color: var(--text-3);
@@ -300,7 +302,31 @@
 
 .pagination-actions {
   display: flex;
+  align-items: center;
   gap: 8px;
+}
+
+.pagination-jump {
+  width: 60px;
+  height: 34px;
+  padding: 0 8px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-2);
+  font: inherit;
+  text-align: center;
+  cursor: text;
+}
+
+.pagination-jump:focus-visible {
+  outline: 2px solid #9aa1aa;
+  outline-offset: 2px;
+}
+
+.pagination-jump:disabled {
+  color: var(--text-3);
+  cursor: not-allowed;
 }
 
 .pagination-actions .icon-button {

@@ -1,10 +1,11 @@
-import { ChevronLeft, ChevronRight, ImageOff, Loader2, RefreshCw, Search } from 'lucide-react'
+import { ImageOff, Loader2, RefreshCw, Search } from 'lucide-react'
 import { useEffect, useMemo, useState, type JSX } from 'react'
 import { formatTimeMs } from '@shared/format'
 import { isTaskActive } from '@shared/task'
 import type { FrameStats } from '@shared/task'
 import type { FrameRecord, TaskRecord } from '@shared/types'
 import { FrameRow } from './FrameRow'
+import { Pagination } from '../common/Pagination'
 
 export type FrameFilterKey = 'all' | 'abnormal' | 'review' | 'normal' | 'failed'
 
@@ -131,31 +132,7 @@ export function FrameTable({
               onOpen={() => onOpenFrame(frame.index)}
             />
           ))}
-          <div className="pagination">
-            <span>
-              第 {safePage} / {totalPages} 页
-            </span>
-            <div className="pagination-actions">
-              <button
-                type="button"
-                className="icon-button"
-                disabled={safePage <= 1}
-                onClick={() => setPage((value) => Math.max(1, value - 1))}
-                aria-label="上一页"
-              >
-                <ChevronLeft size={18} />
-              </button>
-              <button
-                type="button"
-                className="icon-button"
-                disabled={safePage >= totalPages}
-                onClick={() => setPage((value) => Math.min(totalPages, value + 1))}
-                aria-label="下一页"
-              >
-                <ChevronRight size={18} />
-              </button>
-            </div>
-          </div>
+          <Pagination page={safePage} totalPages={totalPages} onPageChange={setPage} />
         </>
       )}
     </section>

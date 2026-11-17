@@ -28,8 +28,6 @@ const api: FramelensApi = {
   cancelTask: (taskId: string): Promise<boolean> => ipcRenderer.invoke('task:cancel', taskId),
   retryFailedFrames: (taskId: string): Promise<TaskSummary> =>
     ipcRenderer.invoke('task:retryFailed', taskId),
-  relocalizeTask: (taskId: string): Promise<TaskSummary> =>
-    ipcRenderer.invoke('task:relocalize', taskId),
   deleteTask: (taskId: string): Promise<DeleteTaskResult> =>
     ipcRenderer.invoke('task:delete', taskId),
   exportTaskCsv: (taskId: string): Promise<ExportResult> =>

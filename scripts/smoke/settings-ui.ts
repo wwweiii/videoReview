@@ -6,6 +6,8 @@ import { getPublicSettings } from '../../src/main/config/settings'
 import { getResolvedModelConfig } from '../../src/main/config/model-config'
 import { registerIpcHandlers } from '../../src/main/ipc'
 import { getTask, listTasks } from '../../src/main/task/manager'
+import { emitFrame, emitSummary } from '../../src/main/task/event'
+import { flushSave } from '../../src/main/task/store'
 
 type Check = (name: string, ok: boolean, detail?: unknown) => void
 
@@ -95,6 +97,35 @@ export async function verifySettingsUi(videoPath: string, check: Check): Promise
     await until(() => evaluate(`Boolean(document.querySelector('.history-row'))`))
     await evaluate(`document.querySelector('.history-row').click()`)
     await until(() => evaluate(`Boolean(document.querySelector('.frame-row'))`))
+    check('物品任务详情已移除重新定位按钮及 preload 接口', await evaluate(`![...document.querySelectorAll('.detail-actions button')].some(el => el.textContent.trim() === '重新定位') && !('relocalizeTask' in window.framelens)`))
+    check('没有失败时隐藏失败重试按钮', await evaluate(`![...document.querySelectorAll('.detail-actions button')].some(el => el.textContent.trim() === '失败重试')`))
+
+    const retryTask = getTask(listTasks()[0].id)
+    const failedJudgment = retryTask.frames.find(frame => frame.verdict === 'normal')!
+    const failedRegion = retryTask.frames.find(frame => frame.regionStatus === 'ok' && frame.regions.length > 0)!
+    const successfulFrames = () => JSON.stringify(retryTask.frames.filter(frame => frame !== failedJudgment && frame !== failedRegion))
+    const successfulBefore = successfulFrames()
+    const healthUrl = `${getResolvedModelConfig().baseUrl.replace(/\/v1\/?$/, '')}/health`
+    const countsBefore = (await (await fetch(healthUrl)).json()).counts
+    Object.assign(failedJudgment, { status: 'failed', verdict: 'failed', error: '模拟判定失败' })
+    Object.assign(failedRegion, { regionStatus: 'failed', regionError: '模拟定位失败', regions: [] })
+    retryTask.status = 'completed_with_errors'
+    emitFrame(retryTask, failedJudgment)
+    emitFrame(retryTask, failedRegion)
+    await flushSave(retryTask)
+    emitSummary(retryTask, true)
+    await until(() => evaluate(`[...document.querySelectorAll('.detail-actions button')].some(el => el.textContent.trim() === '失败重试')`))
+    check('失败重试显示在原重新定位位置、导出按钮之前', await evaluate(`JSON.stringify([...document.querySelectorAll('.detail-actions button')].map(el => el.textContent.trim())) === JSON.stringify(['失败重试', '导出'])`))
+    await click('.detail-actions button', '失败重试')
+    await until(() => getTask(retryTask.id).status === 'analyzing')
+    await until(() => evaluate(`[...document.querySelectorAll('.detail-actions button')].some(el => el.textContent.trim() === '取消')`))
+    check('重试期间隐藏失败重试按钮，避免重复提交', await evaluate(`![...document.querySelectorAll('.detail-actions button')].some(el => el.textContent.trim() === '失败重试')`))
+    await until(() => getTask(retryTask.id).status === 'completed')
+    const countsAfter = (await (await fetch(healthUrl)).json()).counts
+    check('点击失败重试仅重新判定失败帧并补跑失败定位', failedJudgment.status === 'completed' && failedRegion.regionStatus === 'ok' && countsAfter.judgmentCount === countsBefore.judgmentCount + 1 && countsAfter.locateCount === countsBefore.locateCount + 1)
+    check('失败重试保留其他成功帧的全部结果', successfulFrames() === successfulBefore)
+    await until(() => evaluate(`!document.querySelector('.progress-block')`))
+    check('全部重试成功后自动隐藏失败重试按钮', await evaluate(`![...document.querySelectorAll('.detail-actions button')].some(el => el.textContent.trim() === '失败重试')`))
     await evaluate(`document.querySelector('.frame-row').click()`)
     check('任务详情已移除调用轨迹入口', await evaluate(`![...document.querySelectorAll('.drawer button')].some(el => el.textContent.trim() === '调用轨迹')`))
     await evaluate(`document.querySelector('.drawer-head [aria-label="关闭"]').click()`)

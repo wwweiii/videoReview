@@ -13,13 +13,6 @@ import { emitFrame, emitSummary } from './event'
 import { flushSave, scheduleSave } from './store'
 import { getTaskStats, updateResultStats } from './stats'
 
-interface LocalizeRunOptions {
-  /** true = 只跑定位（重定位），进度只按定位帧计算 */
-  onlyLocalize: boolean
-  /** true = 只处理尚未成功定位的异常帧（重试失败判定后补齐定位） */
-  onlyPendingRegions?: boolean
-}
-
 export function regionCandidateFrames(task: TaskRecord): FrameRecord[] {
   return task.frames.filter(
     (frame) =>
@@ -53,8 +46,7 @@ function delay(ms: number): Promise<void> {
 export function createRegionRunner(
   task: TaskRecord,
   modelConfig: ResolvedModelConfig,
-  parentSignal: AbortSignal,
-  onlyLocalize: boolean
+  parentSignal: AbortSignal
 ): RegionRunner {
   const controller = new AbortController()
   const signal = AbortSignal.any([parentSignal, controller.signal])
@@ -110,11 +102,6 @@ export function createRegionRunner(
 
   function bumpProgress(frame: FrameRecord): void {
     updateResultStats(task, frame)
-    if (onlyLocalize) {
-      task.progress = planned > 0 ? Math.round((located / planned) * 1000) / 10 : 0
-      task.phaseMessage = `正在定位违禁物 ${located}/${Math.max(planned, 1)}`
-      return
-    }
     const total = task.frames.length
     const processed = getTaskStats(task).processed
     const totalWork = total + Math.max(planned, 1)
@@ -267,25 +254,24 @@ export function createRegionRunner(
   }
 }
 
+/** 只为本次失败重试涉及的帧补齐定位。 */
 export async function localizeFrames(
   task: TaskRecord,
   modelConfig: ResolvedModelConfig,
   signal: AbortSignal,
-  options: LocalizeRunOptions
+  onlyIndices: Set<number>
 ): Promise<void> {
   if (!task.config.localize) return
-  let targets = regionCandidateFrames(task)
-  if (options.onlyPendingRegions) {
-    targets = targets.filter((frame) => frame.regionStatus !== 'ok')
-  }
+  const targets = regionCandidateFrames(task).filter(
+    (frame) => onlyIndices.has(frame.index) && frame.regionStatus !== 'ok'
+  )
   if (targets.length === 0) return
 
   task.phaseMessage = '正在定位违禁物'
-  if (options.onlyLocalize) task.progress = 0
   emitSummary(task, true)
   await flushSave(task)
 
-  const runner = createRegionRunner(task, modelConfig, signal, options.onlyLocalize)
+  const runner = createRegionRunner(task, modelConfig, signal)
   for (const frame of targets) runner.enqueue(frame)
   try {
     await runner.finish()

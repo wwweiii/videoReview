@@ -48,7 +48,7 @@ export function labelMatchesItem(raw: string, item: ProhibitedItem): boolean {
 
 /**
  * 历史版本内置物品（已从预设清单移除）：
- * 仅用于让旧任务在"重新定位/重试"时还能显示正确中文类别，不参与新任务选择。
+ * 仅用于让旧任务在重试时还能显示正确中文类别，不参与新任务选择。
  */
 const LEGACY_ITEM_LABELS: Record<string, string> = {
   pen: '笔',
