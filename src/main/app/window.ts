@@ -7,8 +7,8 @@ let mainWindow: BrowserWindow | null = null
 export function createWindow(): void {
   const iconPath = getWindowIconPath()
   mainWindow = new BrowserWindow({
-    width: 1120,
-    height: 760,
+    width: 1280,
+    height: 860,
     minWidth: 960,
     minHeight: 600,
     show: false,
