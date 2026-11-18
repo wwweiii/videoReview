@@ -8,7 +8,7 @@ import type {
   TestModelInput
 } from '@shared/types'
 import { getResolvedModelConfigForTesting } from './config/model-config'
-import { getPublicSettings, saveSettings } from './config/settings'
+import { getPublicSettings, isModelTracingEnabled, saveSettings } from './config/settings'
 import { probeModelConfig } from './localization/probe'
 import { testModelConnection } from './model/client'
 import { getModelCallTrace, listModelCallTraces } from './model/call-history'
@@ -56,7 +56,10 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('task:startBehavior', async (_event, filePath: string) => startBehaviorReview(filePath))
   ipcMain.handle('task:list', async () => listTasks())
   ipcMain.handle('task:get', async (_event, taskId: string) => getTaskView(taskId))
-  ipcMain.handle('task:diagnostics', async (_event, taskId: string, index: number) => getFrameDiagnostics(taskId, index))
+  ipcMain.handle('task:diagnostics', async (_event, taskId: string, index: number) => {
+    const diagnostics = await getFrameDiagnostics(taskId, index)
+    return isModelTracingEnabled() ? diagnostics : { ...diagnostics, callTraces: [] }
+  })
   ipcMain.handle('task:cancel', async (_event, taskId: string) => cancelActiveTask(taskId))
   ipcMain.handle('task:retryFailed', async (_event, taskId: string) => retryFailedFrames(taskId))
   ipcMain.handle('task:delete', async (_event, taskId: string): Promise<DeleteTaskResult> => {
@@ -69,20 +72,20 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('settings:save', async (_event, input: SaveSettingsInput) => saveSettings(input))
-  const requireDeveloperMode = (): void => {
-    if (!getPublicSettings().developerMode) throw new Error('请先开启开发者模式')
+  const requireTracingEnabled = (): void => {
+    if (!isModelTracingEnabled()) throw new Error('请先展开高级设置并打开「启用轨迹」')
   }
   ipcMain.handle('model:traces', async (_event, before?: string) => {
-    requireDeveloperMode()
+    requireTracingEnabled()
     const page = await listModelCallTraces(before)
-    requireDeveloperMode()
+    requireTracingEnabled()
     const names = new Map(listTasks().map((task) => [task.id, task.name]))
     return { ...page, items: page.items.map((item) => ({ ...item, taskName: item.taskId ? names.get(item.taskId) : undefined })) }
   })
   ipcMain.handle('model:trace', async (_event, id: string) => {
-    requireDeveloperMode()
+    requireTracingEnabled()
     const trace = await getModelCallTrace(id)
-    requireDeveloperMode()
+    requireTracingEnabled()
     return trace
   })
 

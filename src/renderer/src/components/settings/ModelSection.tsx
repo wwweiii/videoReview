@@ -1,4 +1,4 @@
-import { Loader2 } from 'lucide-react'
+import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
 import type { JSX } from 'react'
 import {
   BOX_ORDER_LABELS,
@@ -18,7 +18,7 @@ const COORDINATE_SPACE_OPTIONS: CoordinateSpace[] = [
 
 const BOX_ORDER_OPTIONS: BoxOrder[] = ['xyxy', 'yxyx']
 
-/** 设置页「模型配置」子页卡片：预设/自定义切换、连接参数、测试连接与开发者配置 */
+/** 设置页「模型配置」子页卡片：预设/自定义切换、连接参数、测试连接与高级设置 */
 export function ModelSection({
   form,
   presetAvailable,
@@ -118,77 +118,89 @@ export function ModelSection({
 
       {testActions}
 
-      <div className="form-field developer-mode-field">
-        <span>开发者模式</span>
-        <div className="switch-row">
-          <button
-            type="button"
-            role="switch"
-            aria-checked={form.developerMode}
-            aria-label="开发者模式"
-            className={`switch ${form.developerMode ? 'is-on' : ''}`}
-            onClick={() => form.setDeveloperMode((value) => !value)}
-          >
-            <span className="switch-thumb" />
-          </button>
-        </div>
+      <button
+        type="button"
+        className="button button-ghost settings-disclosure"
+        aria-expanded={form.developerMode}
+        aria-controls="model-advanced-settings"
+        onClick={() => form.setDeveloperMode((value) => !value)}
+      >
+        高级设置
+        {form.developerMode ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+      </button>
+
+      <div id="model-advanced-settings" hidden={!form.developerMode}>
+        {form.developerMode && form.modelMode === 'custom' ? (
+          <div className="form-grid">
+            <label className="form-field span-2">
+              <span>额外请求体（JSON 对象）</span>
+              <textarea
+                value={form.extraBody}
+                onChange={(event) => form.setExtraBody(event.target.value)}
+                placeholder='例如 {"chat_template_kwargs":{"enable_thinking":false}}'
+                spellCheck={false}
+                rows={3}
+              />
+            </label>
+
+            <label className="form-field">
+              <span>坐标空间</span>
+              <select
+                value={form.coordinateSpaceOverride}
+                onChange={(event) =>
+                  form.setCoordinateSpaceOverride(
+                    event.target.value as 'auto' | CoordinateSpace
+                  )
+                }
+              >
+                <option value="auto">自动探测</option>
+                {COORDINATE_SPACE_OPTIONS.map((space) => (
+                  <option key={space} value={space}>
+                    {COORDINATE_SPACE_LABELS[space]}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="form-field">
+              <span>轴序</span>
+              <select
+                value={form.boxOrderOverride}
+                onChange={(event) =>
+                  form.setBoxOrderOverride(event.target.value as 'auto' | BoxOrder)
+                }
+              >
+                <option value="auto">自动探测</option>
+                {BOX_ORDER_OPTIONS.map((order) => (
+                  <option key={order} value={order}>
+                    {BOX_ORDER_LABELS[order]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        ) : null}
+        {form.developerMode ? (
+          <div className="settings-actions">
+            <label className="switch-row">
+              <span id="model-trace-label">启用轨迹</span>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={form.traceEnabled}
+                aria-labelledby="model-trace-label"
+                className={`switch ${form.traceEnabled ? 'is-on' : ''}`}
+                onClick={() => form.setTraceEnabled((value) => !value)}
+              >
+                <span className="switch-thumb" />
+              </button>
+            </label>
+            {form.traceEnabled ? (
+              <button type="button" className="button button-secondary" onClick={onOpenTraces}>调用轨迹</button>
+          ) : null}
+          </div>
+        ) : null}
       </div>
-
-      {form.modelMode === 'custom' && form.developerMode ? (
-        <div className="form-grid">
-          <label className="form-field span-2">
-            <span>额外请求体（JSON 对象）</span>
-            <textarea
-              value={form.extraBody}
-              onChange={(event) => form.setExtraBody(event.target.value)}
-              placeholder='例如 {"chat_template_kwargs":{"enable_thinking":false}}'
-              spellCheck={false}
-              rows={3}
-            />
-          </label>
-
-          <label className="form-field">
-            <span>坐标空间</span>
-            <select
-              value={form.coordinateSpaceOverride}
-              onChange={(event) =>
-                form.setCoordinateSpaceOverride(
-                  event.target.value as 'auto' | CoordinateSpace
-                )
-              }
-            >
-              <option value="auto">自动探测</option>
-              {COORDINATE_SPACE_OPTIONS.map((space) => (
-                <option key={space} value={space}>
-                  {COORDINATE_SPACE_LABELS[space]}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="form-field">
-            <span>轴序</span>
-            <select
-              value={form.boxOrderOverride}
-              onChange={(event) =>
-                form.setBoxOrderOverride(event.target.value as 'auto' | BoxOrder)
-              }
-            >
-              <option value="auto">自动探测</option>
-              {BOX_ORDER_OPTIONS.map((order) => (
-                <option key={order} value={order}>
-                  {BOX_ORDER_LABELS[order]}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-      ) : null}
-      {form.developerMode ? (
-        <div className="settings-actions">
-          <button type="button" className="button button-secondary" onClick={onOpenTraces}>调用轨迹</button>
-        </div>
-      ) : null}
     </section>
   )
 }

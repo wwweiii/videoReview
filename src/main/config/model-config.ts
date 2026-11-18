@@ -7,13 +7,15 @@ import {
   loadSettings,
   normalizeRuntimeModel,
   readSavedApiKey,
-  validateCustomModel
+  validateCustomModel,
+  type StoredSettings
 } from './settings'
 
 export interface ResolvedModelConfig {
   mode: ModelMode
   label: string
   developerMode: boolean
+  traceEnabled: boolean
   baseUrl: string
   model: string
   apiKey: string
@@ -26,7 +28,7 @@ export interface ResolvedModelConfig {
   parseDialectOverride: 'auto' | ParseDialect
 }
 
-/** 关闭开发者模式时保留草稿，但始终禁用额外请求体和坐标覆盖。 */
+/** 收起高级设置时保留草稿，并使用默认请求体和坐标配置。 */
 function runtimeForMode(source: Parameters<typeof normalizeRuntimeModel>[0], developerMode: boolean) {
   return developerMode ? normalizeRuntimeModel(source) : {
     extraBody: '',
@@ -36,7 +38,11 @@ function runtimeForMode(source: Parameters<typeof normalizeRuntimeModel>[0], dev
   }
 }
 
-function resolvePreset(developerMode = loadSettings().developerMode): ResolvedModelConfig {
+function resolvePreset(
+  stored: StoredSettings,
+  developerMode = stored.developerMode,
+  traceEnabled = stored.traceEnabled
+): ResolvedModelConfig {
   const preset = getPresetConfig()
   if (!preset) throw new Error('预设模型不可用')
   const runtime = runtimeForMode({
@@ -49,10 +55,11 @@ function resolvePreset(developerMode = loadSettings().developerMode): ResolvedMo
     mode: 'preset',
     label: '预设',
     developerMode,
+    traceEnabled: developerMode && traceEnabled,
     baseUrl: preset.baseUrl,
     model: preset.model,
     apiKey: preset.apiKey,
-    concurrency: loadSettings().requestConcurrency,
+    concurrency: stored.requestConcurrency,
     timeoutSec: preset.timeoutSec,
     extraHeaders: preset.extraHeaders,
     ...runtime
@@ -61,7 +68,7 @@ function resolvePreset(developerMode = loadSettings().developerMode): ResolvedMo
 
 export function getResolvedModelConfig(): ResolvedModelConfig {
   const stored = loadSettings()
-  if (stored.modelMode === 'preset') return resolvePreset()
+  if (stored.modelMode === 'preset') return resolvePreset(stored)
   validateCustomModel({
     baseUrl: stored.customModel.baseUrl,
     model: stored.customModel.model
@@ -70,6 +77,7 @@ export function getResolvedModelConfig(): ResolvedModelConfig {
     mode: 'custom',
     label: stored.customModel.model,
     developerMode: stored.developerMode,
+    traceEnabled: stored.developerMode && stored.traceEnabled,
     baseUrl: stored.customModel.baseUrl,
     model: stored.customModel.model,
     apiKey: readSavedApiKey(stored.customModel),
@@ -83,7 +91,8 @@ export function getResolvedModelConfig(): ResolvedModelConfig {
 export function getResolvedModelConfigForTesting(input: TestModelInput): ResolvedModelConfig {
   const stored = loadSettings()
   const developerMode = input.developerMode ?? stored.developerMode
-  if (input.modelMode === 'preset') return resolvePreset(developerMode)
+  const traceEnabled = input.traceEnabled ?? stored.traceEnabled
+  if (input.modelMode === 'preset') return resolvePreset(stored, developerMode, traceEnabled)
   validateCustomModel(input.customModel)
   const apiKey = input.customModel.apiKey?.trim() || readSavedApiKey(stored.customModel)
   const runtime = runtimeForMode(applyRuntimeOverrides(input.customModel, {
@@ -94,6 +103,7 @@ export function getResolvedModelConfigForTesting(input: TestModelInput): Resolve
     mode: 'custom',
     label: input.customModel.model.trim(),
     developerMode,
+    traceEnabled: developerMode && traceEnabled,
     baseUrl: input.customModel.baseUrl.trim(),
     model: input.customModel.model.trim(),
     apiKey,

@@ -45,6 +45,7 @@ export function useSettingsForm({
     settings.customModel.boxOrderOverride
   )
   const [developerMode, setDeveloperMode] = useState(settings.developerMode)
+  const [traceEnabled, setTraceEnabled] = useState(settings.traceEnabled)
   const [intervalSec, setIntervalSec] = useState(settings.intervalSec)
   const [analysisMode, setAnalysisMode] = useState<AnalysisMode>(settings.analysisMode)
   const [groupSize, setGroupSize] = useState(settings.groupSize)
@@ -176,6 +177,7 @@ export function useSettingsForm({
       judgmentImage: normalizeJudgmentImage(judgmentImage),
       customModel: buildCustomModel(),
       developerMode,
+      traceEnabled,
       intervalSec: normalizeInterval(intervalSec),
       prohibitedItems: normalizeSelectedItems(items, customItems),
       customProhibitedItems: customItems,
@@ -209,6 +211,8 @@ export function useSettingsForm({
     setBoxOrderOverride,
     developerMode,
     setDeveloperMode,
+    traceEnabled,
+    setTraceEnabled,
     intervalSec,
     setIntervalSec,
     analysisMode,

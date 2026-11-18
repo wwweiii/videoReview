@@ -16,6 +16,7 @@ import {
   DEFAULT_MODEL_MODE,
   DEFAULT_MODEL_RUNTIME,
   DEFAULT_TIMEOUT_SEC,
+  DEFAULT_TRACE_ENABLED,
   MAX_GROUP_SIZE,
   MIN_GROUP_SIZE
 } from '@shared/defaults'
@@ -60,6 +61,7 @@ export interface StoredSettings {
   modelMode: ModelMode
   customModel: StoredCustomModel
   developerMode: boolean
+  traceEnabled: boolean
   intervalSec: number
   prohibitedItems: string[]
   customProhibitedItems: CustomProhibitedItem[]
@@ -93,6 +95,7 @@ function defaultStoredSettings(): StoredSettings {
       ? (preset ? 'preset' : 'custom')
       : DEFAULT_MODEL_MODE === 'preset' && !preset ? 'custom' : DEFAULT_MODEL_MODE,
     developerMode: DEFAULT_DEVELOPER_MODE,
+    traceEnabled: DEFAULT_TRACE_ENABLED,
     customModel: {
       baseUrl: DEFAULT_CUSTOM_MODEL.baseUrl.trim(),
       model: DEFAULT_CUSTOM_MODEL.model.trim(),
@@ -169,6 +172,7 @@ function normalizeStored(raw: LegacyStoredSettings): StoredSettings {
     modelMode:
       raw.modelMode === 'preset' || raw.modelMode === 'custom' ? raw.modelMode : defaults.modelMode,
     developerMode: typeof raw.developerMode === 'boolean' ? raw.developerMode : defaults.developerMode,
+    traceEnabled: typeof raw.traceEnabled === 'boolean' ? raw.traceEnabled : defaults.traceEnabled,
     customModel: {
       baseUrl: typeof custom.baseUrl === 'string' ? custom.baseUrl : defaults.customModel.baseUrl,
       model: typeof custom.model === 'string' ? custom.model : defaults.customModel.model,
@@ -311,6 +315,7 @@ export function getPublicSettings(): PublicSettings {
     modelMode: stored.modelMode,
     presetAvailable: isPresetAvailable(),
     developerMode: stored.developerMode,
+    traceEnabled: stored.traceEnabled,
     customModel: {
       baseUrl: stored.customModel.baseUrl,
       model: stored.customModel.model,
@@ -332,6 +337,11 @@ export function getPublicSettings(): PublicSettings {
     behaviorFps: stored.behaviorFps,
     behaviorImageScalePercent: stored.behaviorImageScalePercent
   }
+}
+
+export function isModelTracingEnabled(): boolean {
+  const { developerMode, traceEnabled } = loadSettings()
+  return developerMode && traceEnabled
 }
 
 /** 行为任务创建时使用的采样参数与行为名称快照。 */
@@ -384,12 +394,13 @@ export function applyRuntimeOverrides(
 
 export function saveSettings(input: SaveSettingsInput): PublicSettings {
   const current = loadSettings()
-  if (input.section && !['items', 'behavior', 'model'].includes(input.section)) {
+  if (input.section && !['items', 'behavior', 'model', 'trace'].includes(input.section)) {
     throw new Error('未知设置分区')
   }
   const saveModel = !input.section || input.section === 'model'
   const saveItems = !input.section || input.section === 'items'
   const saveBehavior = !input.section || input.section === 'behavior'
+  const saveTrace = !input.section || input.section === 'trace'
   if (saveModel && input.modelMode === 'preset' && !isPresetAvailable()) {
     throw new Error('预设模型不可用')
   }
@@ -431,9 +442,11 @@ export function saveSettings(input: SaveSettingsInput): PublicSettings {
   const next: StoredSettings = {
     ...current,
     customModel: nextCustom,
+    traceEnabled: saveTrace && typeof input.traceEnabled === 'boolean' ? input.traceEnabled : current.traceEnabled,
     ...(saveModel
       ? {
-          modelMode: input.modelMode, developerMode: Boolean(input.developerMode),
+          modelMode: input.modelMode,
+          developerMode: Boolean(input.developerMode),
           requestConcurrency: Math.round(clampNumber(Number(input.requestConcurrency) || current.requestConcurrency, 1, 8))
         }
       : {}),

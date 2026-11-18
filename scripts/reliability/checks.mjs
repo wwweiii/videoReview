@@ -35,7 +35,7 @@ const verdict = (input) => deriveVerdict(parsed(input), 0.6).verdict
 const response = (content, finishReason = 'stop') => new Response(JSON.stringify({ choices: [{ message: { content: typeof content === 'string' ? content : JSON.stringify(content) }, finish_reason: finishReason }] }))
 const initial = {
   modelMode: 'custom', customModel: { baseUrl: 'http://127.0.0.1:1/v1', model: 'test', extraBody: '' },
-  developerMode: false, intervalSec: 2, prohibitedItems: ['phone'], customProhibitedItems: [],
+  developerMode: false, traceEnabled: false, intervalSec: 2, prohibitedItems: ['phone'], customProhibitedItems: [],
   analysisMode: 'single', groupSize: 4, localize: false, behaviorItems: [{ id: 'behavior:run', label: '奔跑' }],
   behaviorWindowSec: 2, behaviorStrideSec: 2, behaviorFps: 4, behaviorImageScalePercent: 100
 }
@@ -214,7 +214,7 @@ test('隐藏的非法 JSON 不阻止关闭开发者模式，重新启用时才�
   } finally { saveSettings(initial) }
 })
 
-test('统一调用轨迹导入旧记录并去重，分页不传正文，失败调用可查且关闭后不再记录', async () => {
+test('统一调用轨迹导入旧记录并去重，分页不传正文，仅在两项开启时记录调用', async () => {
   const oldTrace = {
     operation: '旧调用', startedAt: '2020-01-01T00:00:00.000Z', finishedAt: '2020-01-01T00:00:01.000Z',
     latencyMs: 1000, endpoint: 'http://127.0.0.1/v1', status: 200,
@@ -251,17 +251,25 @@ test('统一调用轨迹导入旧记录并去重，分页不传正文，失败�
     assert.equal(new Set(ids).size, ids.length)
     assert.equal(ids.length, imported.total + 35)
 
-    saveSettings({ ...initial, developerMode: true })
+    saveSettings({ ...initial, developerMode: true, traceEnabled: true })
+    const enabledConfig = getResolvedModelConfig()
     globalThis.fetch = async () => new Response('服务不可用', { status: 503 })
-    await assert.rejects(requestChat(getResolvedModelConfig(), [], { operation: '失败连接测试', maxAttempts: 1 }), /模型请求失败/)
+    await assert.rejects(requestChat(enabledConfig, [], { operation: '失败连接测试', maxAttempts: 1 }), /模型请求失败/)
     const failedPage = await listModelCallTraces()
     const failed = failedPage.items.find((item) => item.operation === '失败连接测试')
     assert.equal(failed.status, 503)
     assert.ok(failed.error)
     assert.equal((await getModelCallTrace(failed.id)).responseBody, '服务不可用')
-    saveSettings(initial)
     globalThis.fetch = async () => response(normal)
-    await requestChat(getResolvedModelConfig(), [])
+    const draft = { ...initial, developerMode: true, customModel: { ...initial.customModel, extraBody: '{' } }
+    saveSettings({ ...draft, section: 'trace' })
+    assert.equal(getPublicSettings().traceEnabled, false)
+    assert.equal(getPublicSettings().developerMode, true)
+    assert.equal((await requestChat(enabledConfig, [])).traces.length, 0)
+    assert.equal((await requestChat(getResolvedModelConfig(), [])).traces.length, 0)
+    saveSettings({ ...initial, traceEnabled: true })
+    assert.equal((await requestChat(enabledConfig, [])).traces.length, 0)
+    assert.equal((await requestChat(getResolvedModelConfig(), [])).traces.length, 0)
     assert.equal((await listModelCallTraces()).total, failedPage.total)
   } finally { saveSettings(initial) }
 })
@@ -269,11 +277,12 @@ test('统一调用轨迹导入旧记录并去重，分页不传正文，失败�
 test('调用轨迹写入失败不影响模型请求结果', async () => {
   const write = fs.promises.writeFile
   try {
-    saveSettings({ ...initial, developerMode: true })
+    saveSettings({ ...initial, developerMode: true, traceEnabled: true })
     globalThis.fetch = async () => response(normal)
     fs.promises.writeFile = async () => { throw new Error('EACCES trace simulated') }
     const result = await requestChat(getResolvedModelConfig(), [])
     assert.equal(result.content, JSON.stringify(normal))
+    assert.equal(result.traces.length, 1)
   } finally { fs.promises.writeFile = write; saveSettings(initial) }
 })
 

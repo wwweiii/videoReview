@@ -191,6 +191,18 @@ export async function verifySettingsUi(videoPath: string, check: Check): Promise
     check('恢复写入后原草稿可重试保存', getPublicSettings().intervalSec === 5.5)
 
     await click('.settings-nav-item', '模型配置')
+    const advancedSelector = '.settings-disclosure'
+    const traceSwitchSelector = '[aria-labelledby="model-trace-label"]'
+    const traceButtonSelector = '#model-advanced-settings .button-secondary'
+    const traceId = await evaluate(`window.framelens.listModelCallTraces().then(page => page.items[0].id)`)
+    const traceReadsBlocked = `(async () => {
+      const results = await Promise.allSettled([
+        window.framelens.listModelCallTraces(),
+        window.framelens.getModelCallTrace(${JSON.stringify(traceId)})
+      ]);
+      return results.every(result => result.status === 'rejected');
+    })()`
+    check('高级设置展开时箭头朝下', await evaluate(`Boolean(document.querySelector('${advancedSelector}[aria-expanded="true"] .lucide-chevron-down'))`))
     check('模型设置不再包含语言、token 或图片缩放项', await evaluate(`(() => {
       const labels = [...document.querySelectorAll('.form-field > span')].map(el => el.textContent);
       return !labels.includes('提示词语言') && !labels.includes('最大 token') && !labels.some(label => label.includes('图片缩放比例'));
@@ -216,22 +228,30 @@ export async function verifySettingsUi(videoPath: string, check: Check): Promise
       }
     })()`)
     await requestClose()
-    check('开启开发者模式后高级字段实际生效', getResolvedModelConfig().extraBody === '{"top_k":7}' && getResolvedModelConfig().coordinateSpaceOverride === 'absolute_px' && getResolvedModelConfig().boxOrderOverride === 'yxyx')
-    await evaluate(`document.querySelector('[aria-label="开发者模式"]').click()`)
+    check('展开高级设置后高级字段实际生效', getResolvedModelConfig().extraBody === '{"top_k":7}' && getResolvedModelConfig().coordinateSpaceOverride === 'absolute_px' && getResolvedModelConfig().boxOrderOverride === 'yxyx')
+    await click(advancedSelector, '高级设置')
     check('关闭后立即测试连接不会携带隐藏的额外参数', !('top_k' in await testConnectionBody()))
     await requestClose()
     check('关闭后移除三项控件，运行配置回到默认', await evaluate(`document.querySelectorAll('.settings-card textarea, .settings-card select').length === 0`) && getResolvedModelConfig().coordinateSpaceOverride === 'auto' && getResolvedModelConfig().boxOrderOverride === 'auto')
-    check('关闭开发者模式隐藏轨迹入口并拒绝读取记录', await evaluate(`(async () => ![...document.querySelectorAll('.settings-card button')].some(el => el.textContent.trim() === '调用轨迹') && await window.framelens.listModelCallTraces().then(() => false, () => true))()`))
+    check('收起高级设置时箭头朝右，隐藏轨迹控件并拒绝读取记录',
+      await evaluate(`Boolean(document.querySelector('${advancedSelector}[aria-expanded="false"] .lucide-chevron-right')) && !document.querySelector('${traceSwitchSelector}, ${traceButtonSelector}')`) &&
+      await evaluate(traceReadsBlocked))
     check('模型页已删除高级配置标题、分隔线和请求上限提示', await evaluate(`!document.querySelector('.form-subhead') && !document.querySelector('.settings-card small') && !document.querySelector('.settings-card').textContent.includes('高级配置')`))
-    await evaluate(`document.querySelector('.developer-mode-field').scrollIntoView({ block: 'center' })`)
+    await evaluate(`document.querySelector('${advancedSelector}').scrollIntoView({ block: 'center' })`)
     await captureSettings('smoke-settings-model-closed.png')
-    await evaluate(`document.querySelector('[aria-label="开发者模式"]').click()`)
+    await click(advancedSelector, '高级设置')
     check('重新开启后立即测试连接恢复额外参数', (await testConnectionBody()).top_k === 7)
     await requestClose()
     check('重新展开保留原坐标空间和轴序', await evaluate(`(() => {
       const values = [...document.querySelectorAll('.settings-card select')].map(el => el.value);
       return values[0] === 'absolute_px' && values[1] === 'yxyx';
     })()`))
+    check('重新展开恢复已保存的轨迹开关', await evaluate(`Boolean(document.querySelector('${traceSwitchSelector}[aria-checked="true"]'))`))
+    await evaluate(`document.querySelector('${traceSwitchSelector}').click()`)
+    await until(() => !getPublicSettings().traceEnabled)
+    check('仅开启高级设置时，轨迹入口隐藏且无法读取列表和详情',
+      await evaluate(`Boolean(document.querySelector('${traceSwitchSelector}[aria-checked="false"]')) && !document.querySelector('${traceButtonSelector}')`) &&
+      await evaluate(traceReadsBlocked))
     await evaluate(`(() => {
       const textarea = document.querySelector('.settings-card textarea');
       Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(textarea, ${JSON.stringify(savedAdvanced.extraBody)});
@@ -241,9 +261,14 @@ export async function verifySettingsUi(videoPath: string, check: Check): Promise
       }
     })()`)
     await requestClose()
-    await evaluate(`document.querySelector('.developer-mode-field').scrollIntoView({ block: 'center' })`)
-    await captureSettings('smoke-settings-model.png')
+    await evaluate(`document.querySelector('${traceSwitchSelector}').click()`)
     await testConnectionBody()
+    check('启用轨迹后开关位于调用轨迹左侧', await evaluate(`
+      document.querySelector('${traceSwitchSelector}').getBoundingClientRect().right <
+      document.querySelector('${traceButtonSelector}').getBoundingClientRect().left
+    `))
+    await evaluate(`document.querySelector('${advancedSelector}').scrollIntoView({ block: 'center' })`)
+    await captureSettings('smoke-settings-model.png')
     await click('.settings-card button', '调用轨迹')
     await until(() => evaluate(`Boolean(document.querySelector('.call-trace-item'))`))
     check('模型页统一列表包含连接测试和物品调用', await evaluate(`document.querySelector('.call-trace-body').textContent.includes('连接测试') && document.querySelector('.call-trace-body').textContent.includes('物品判定')`))

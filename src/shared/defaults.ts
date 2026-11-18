@@ -14,8 +14,10 @@ import type { AnalysisMode, BehaviorItem, CustomProhibitedItem, ModelMode, Prohi
 export const DEFAULT_MODEL_MODE: ModelMode | 'auto' = 'auto'
 /** 设置页「模型配置」→「请求上限」：并发数，1–8。 */
 export const DEFAULT_CONCURRENCY = 4
-/** 设置页「模型配置」→「开发者模式」：true 开启，false 关闭。 */
+/** 设置页「模型配置」→「高级设置」：true 展开并启用，false 收起并停用。 */
 export const DEFAULT_DEVELOPER_MODE = false
+/** 设置页「模型配置」→「启用轨迹」：与高级设置同时开启时记录调用。 */
+export const DEFAULT_TRACE_ENABLED = false
 
 /** 自定义模型连接参数；密钥会随共享代码打包，正式密钥建议在设置页填写。 */
 export const DEFAULT_CUSTOM_MODEL = {
@@ -33,20 +35,20 @@ export const DEFAULT_CUSTOM_MODEL = {
 /** 配置页未显示：请求超时默认值，引用上方 timeoutSec。 */
 export const DEFAULT_TIMEOUT_SEC = DEFAULT_CUSTOM_MODEL.timeoutSec
 
-/** 开发者配置的初始值；仅在开启开发者模式后参与实际请求。 */
+/** 高级设置的初始值；仅在展开高级设置后参与实际请求。 */
 export const DEFAULT_MODEL_RUNTIME: {
   extraBody: string
   coordinateSpaceOverride: 'auto' | CoordinateSpace
   boxOrderOverride: 'auto' | BoxOrder
   parseDialectOverride: 'auto' | ParseDialect
 } = {
-  /** 设置页「模型配置」→「额外请求体（JSON 对象）」：自定义且开启开发者模式时显示。 */
+  /** 设置页「模型配置」→「额外请求体（JSON 对象）」：自定义且展开高级设置时显示。 */
   extraBody: '',
-  /** 设置页「模型配置」→「坐标空间」：auto 对应「自动探测」，自定义且开启开发者模式时显示。 */
+  /** 设置页「模型配置」→「坐标空间」：auto 对应「自动探测」，自定义且展开高级设置时显示。 */
   coordinateSpaceOverride: 'auto',
-  /** 设置页「模型配置」→「轴序」：auto 对应「自动探测」，自定义且开启开发者模式时显示。 */
+  /** 设置页「模型配置」→「轴序」：auto 对应「自动探测」，自定义且展开高级设置时显示。 */
   boxOrderOverride: 'auto',
-  /** 配置页未显示：解析方言覆盖，仅在开启开发者模式后生效。 */
+  /** 配置页未显示：解析方言覆盖，仅在展开高级设置后生效。 */
   parseDialectOverride: 'auto'
 }
 

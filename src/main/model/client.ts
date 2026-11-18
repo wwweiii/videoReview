@@ -1,7 +1,7 @@
 import { buildRequestBody, extractMessageContent } from '@shared/localization/request'
 import type { ChatMessage } from '@shared/localization/request'
 import type { ResolvedModelConfig } from '../config/model-config'
-import { loadSettings } from '../config/settings'
+import { isModelTracingEnabled, loadSettings } from '../config/settings'
 import type { ModelCallTrace } from '@shared/types'
 import { logger } from '../logger'
 import { TEST_IMAGE_BASE64 } from './prompts'
@@ -78,9 +78,6 @@ export async function requestChat(
   const timeoutSec = Math.max(5, options.timeoutSec ?? config.timeoutSec)
   let body = ''
   let traceBody: string | undefined
-  // 设置页关闭开发者模式后，即使已有任务仍在运行，后续请求也不再产生轨迹。
-  const traceEnabled = (): boolean => config.developerMode && loadSettings().developerMode
-
   let lastError: Error | null = null
   const started = Date.now()
   const traces: ModelCallTrace[] = []
@@ -93,11 +90,12 @@ export async function requestChat(
     const release = await modelScheduler.acquire(schedulingKey(), options.signal)
     const queueMs = Date.now() - queuedAt
     const traceStartedAt = new Date().toISOString()
+    const traceEnabledAtStart = config.traceEnabled && isModelTracingEnabled()
     let traceStatus: number | null = null
     let traceResponse = ''
     let traceError = ''
     const recordTrace = async (): Promise<void> => {
-      if (!traceEnabled()) return
+      if (!traceEnabledAtStart || !isModelTracingEnabled()) return
       const trace: ModelCallTrace = {
         operation: options.operation ?? '模型调用',
         startedAt: traceStartedAt,

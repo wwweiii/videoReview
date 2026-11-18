@@ -129,6 +129,11 @@ try {
   assert.deepEqual(plain(existing.loadSettings()), plain(saved), '已有空列表、false、0 和 auto 都必须保留')
   assert.equal(existing.getResolvedModelConfig().extraBody, '', '关闭开发者模式时不启用高级默认值')
 
+  const { traceEnabled: _traceEnabled, ...legacyTraceSettings } = { ...saved, developerMode: true }
+  const legacyTrace = await scenario({ overrides, saved: legacyTraceSettings })
+  assert.equal(legacyTrace.getPublicSettings().developerMode, true)
+  assert.equal(legacyTrace.getPublicSettings().traceEnabled, false, '旧设置未主动启用轨迹')
+
   const unselected = await scenario({ saved: { ...saved, prohibitedItems: [] } })
   assert.deepEqual(unselected.getPublicSettings().prohibitedItems, [], '取消全部物品后重新加载不得补回预设项')
   unselected.saveSettings({ ...unselected.getPublicSettings(), section: 'items', customModel: { baseUrl: '', model: '' }, prohibitedItems: ['pencil'] })

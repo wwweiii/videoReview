@@ -33,6 +33,8 @@ export function SettingsPage({
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<ConnectionTestResult | null>(null)
   const [traceOpen, setTraceOpen] = useState(false)
+  const canViewTraces = section === 'model' && form.developerMode && form.traceEnabled
+  const canViewTracesRef = useRef(canViewTraces)
   const formRef = useRef(form)
   const onSavedRef = useRef(onSaved)
   const showToastRef = useRef(showToast)
@@ -40,13 +42,14 @@ export function SettingsPage({
   const saverRef = useRef<ReturnType<typeof createSettingsAutosave> | null>(null)
 
   formRef.current = form
+  canViewTracesRef.current = canViewTraces
   onSavedRef.current = onSaved
   showToastRef.current = showToast
 
   const payloadKey = JSON.stringify(form.buildSavePayload())
   useEffect(() => {
-    if (!form.developerMode || section !== 'model') setTraceOpen(false)
-  }, [form.developerMode, section])
+    if (!canViewTraces) setTraceOpen(false)
+  }, [canViewTraces])
 
   useLayoutEffect(() => {
     if (!saverRef.current) {
@@ -82,10 +85,14 @@ export function SettingsPage({
     setTesting(true)
     setTestResult(null)
     try {
+      if (form.developerMode && form.traceEnabled && !(settings.developerMode && settings.traceEnabled)) {
+        await saverRef.current?.flush().catch(() => undefined)
+      }
       setTestResult(
         await window.framelens.testModel({
           modelMode: form.modelMode,
           developerMode: form.developerMode,
+          traceEnabled: form.traceEnabled,
           customModel: form.buildCustomModel()
         })
       )
@@ -100,7 +107,7 @@ export function SettingsPage({
     try {
       saverRef.current?.update(formRef.current.buildSavePayload())
       await saverRef.current?.flush()
-      if (formRef.current.developerMode) setTraceOpen(true)
+      if (canViewTracesRef.current) setTraceOpen(true)
     } catch (error) { showToast('error', friendlyError(error)) }
   }
 
@@ -135,7 +142,7 @@ export function SettingsPage({
           />
         ) : null}
       </div>
-      {section === 'model' && form.developerMode && traceOpen ? <CallTraceDrawer onClose={() => setTraceOpen(false)} /> : null}
+      {canViewTraces && traceOpen ? <CallTraceDrawer onClose={() => setTraceOpen(false)} /> : null}
     </div>
   )
 }

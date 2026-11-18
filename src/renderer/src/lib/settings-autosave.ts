@@ -2,10 +2,13 @@ import type { PublicSettings, SaveSettingsInput } from '@shared/types'
 
 type Section = NonNullable<SaveSettingsInput['section']>
 export interface SettingsSaveState { status: 'saved' | 'pending' | 'saving' | 'error'; message: string }
-const sections: Section[] = ['items', 'behavior', 'model']
+const sections: Section[] = ['trace', 'items', 'behavior', 'model']
 
 function sectionKey(input: SaveSettingsInput, section: Section): string {
-  if (section === 'model') return JSON.stringify([input.modelMode, input.developerMode, input.customModel, input.requestConcurrency])
+  if (section === 'model') return JSON.stringify([
+    input.modelMode, input.developerMode, input.customModel, input.requestConcurrency
+  ])
+  if (section === 'trace') return JSON.stringify(input.traceEnabled ?? false)
   if (section === 'behavior') return JSON.stringify([
     input.behaviorItems, input.behaviorWindowSec, input.behaviorStrideSec, input.behaviorFps,
     input.behaviorImageScalePercent

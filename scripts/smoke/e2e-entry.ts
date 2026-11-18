@@ -100,6 +100,7 @@ function writeSettings(port: number): void {
   fs.mkdirSync(dataDir, { recursive: true })
   const settings = {
     developerMode: true,
+    traceEnabled: true,
     requestConcurrency: 2,
     judgmentImage: { maxEdge: 1120, format: 'jpeg', quality: 90 },
     modelMode: 'custom',

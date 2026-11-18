@@ -55,7 +55,7 @@ export type FrameStatus = 'pending' | 'analyzing' | 'completed' | 'failed'
 export type Verdict = 'pending' | 'normal' | 'abnormal' | 'review' | 'failed'
 export type RiskLevel = 'high' | 'medium' | 'low' | 'none'
 
-/** 开发者模式下保留的一次模型调用完整轨迹。 */
+/** 启用轨迹后保留的一次模型调用完整记录。 */
 export interface ModelCallTrace {
   queueMs?: number
   requestBytes?: number
@@ -169,7 +169,7 @@ export interface FrameRecord {
   regionModel: string
   regionError: string
   regionRaw: string
-  /** 开发者模式下的判定/定位调用轨迹。 */
+  /** 启用轨迹后的判定/定位调用轨迹。 */
   callTraces: ModelCallTrace[]
 }
 
@@ -244,8 +244,9 @@ export interface PublicSettings {
   modelMode: ModelMode
   presetAvailable: boolean
   customModel: CustomModelPublic
-  /** 是否启用模型调试配置并记录调用轨迹。 */
+  /** 是否展开并启用高级设置。 */
   developerMode: boolean
+  traceEnabled: boolean
   intervalSec: number
   prohibitedItems: string[]
   customProhibitedItems: CustomProhibitedItem[]
@@ -276,10 +277,11 @@ export interface SaveSettingsInput {
   requestConcurrency?: number
   judgmentImage?: JudgmentImageOptions
   /** 按设置分区保存，省略时兼容完整设置写入。 */
-  section?: 'items' | 'behavior' | 'model'
+  section?: 'items' | 'behavior' | 'model' | 'trace'
   modelMode: ModelMode
   customModel: CustomModelInput
   developerMode: boolean
+  traceEnabled?: boolean
   intervalSec: number
   prohibitedItems: string[]
   customProhibitedItems: CustomProhibitedItem[]
@@ -297,6 +299,7 @@ export interface TestModelInput {
   modelMode: ModelMode
   /** 测试连接使用界面当前开关，避免自动保存防抖期间读取旧值。 */
   developerMode?: boolean
+  traceEnabled?: boolean
   customModel: CustomModelInput
 }
 
