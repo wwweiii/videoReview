@@ -5,18 +5,18 @@ import { taskResults } from '@shared/behavior'
 import { frameView } from '@shared/task-view'
 import { getTaskStats, invalidateTaskStats } from './stats'
 import { readFrameDiagnostics } from './diagnostics'
-import { getResolvedModelConfig } from '../config/model-config'
+import { getResolvedModelConfig, type ResolvedModelConfig } from '../config/model-config'
 import { getAnalysisConfig, getBehaviorConfig } from '../config/settings'
 import { probeVideo } from '../media/ffmpeg'
-import { analyzeFrames, markUnresolvedFailed } from './analysis'
-import { clearSummaryThrottle, emitSummary } from './event'
+import { analyzeFrames, markUnresolvedFailed, markUnresolvedFrameFailed } from './analysis'
+import { clearSummaryThrottle, emitFrame, emitSummary } from './event'
 import { regionCandidateFrames, localizeFrames } from './regions'
 import { runTask } from './runner'
 import { failTask, finishTask } from './outcome'
-import { taskSession, type ActiveRun } from './session'
+import { reanalyzingFrameIndices, taskSession, type ActiveRun, type FrameReanalysis } from './session'
 import {
   allTaskIds, deleteStoredTask, ensureTasksDirectory, flushAllTasks, flushSave,
-  readTask, rememberTask, scheduleSave, validateTaskId, readTaskSummary, trimTaskCache
+  newFrame, readTask, rememberTask, scheduleSave, validateTaskId, readTaskSummary, trimTaskCache
 } from './store'
 import { buildSummary } from './summary'
 import { runBehaviorTask } from './behavior'
@@ -57,6 +57,7 @@ export function listTasks(): TaskSummary[] {
 export function getTaskView(taskId: string): TaskRecord {
   const task = getTask(taskId)
   return { ...task, stats: getTaskStats(task), frames: task.frames.map(frameView),
+    reanalyzingFrameIndices: reanalyzingFrameIndices(taskId),
     ...(task.behaviorWindows ? { behaviorWindows: task.behaviorWindows.map(frameView) } : {}) }
 }
 
@@ -79,12 +80,16 @@ function assertAcceptingTasks(): void {
 }
 
 /** 启动和重试共用生命周期，退出时可以等待所有工作完成。 */
-function launchRun(task: TaskRecord, work: (controller: AbortController) => Promise<void>): void {
+function launchRun(
+  task: TaskRecord,
+  work: (controller: AbortController) => Promise<void>,
+  reanalysis?: FrameReanalysis
+): ActiveRun {
   assertAcceptingTasks()
   rememberTask(task)
   invalidateTaskStats(task)
   const abortController = new AbortController()
-  const run: ActiveRun = { taskId: task.id, abortController, cancelRequested: false, completion: Promise.resolve() }
+  const run: ActiveRun = { taskId: task.id, abortController, cancelRequested: false, completion: Promise.resolve(), reanalysis }
   taskSession.activeRuns.set(task.id, run)
   run.completion = Promise.resolve()
     .then(() => withTaskContext(task.id, () => work(abortController)))
@@ -94,6 +99,7 @@ function launchRun(task: TaskRecord, work: (controller: AbortController) => Prom
       clearSummaryThrottle(task.id)
       trimTaskCache()
     })
+  return run
 }
 
 function prepareTask(filePath: string, kind: TaskKind): Promise<TaskSummary> {
@@ -177,13 +183,80 @@ export function retryFailedFrames(taskId: string): TaskSummary {
     } else if (needsExtraction) {
       await runTask(task, modelConfig, controller)
     } else {
-      await analyzeFrames(task, modelConfig, controller.signal, new Set(failed.map((frame) => frame.index)))
-      await localizeFrames(task, modelConfig, controller.signal, retryIndices)
-      if (controller.signal.aborted) throw new Error('任务已取消')
-      await finishTask(task, controller.signal)
+      const failedIndices = new Set(failed.map((frame) => frame.index))
+      await analyzeAndLocalizeFrames(task, modelConfig, controller.signal, failedIndices, retryIndices)
     }
   })
   return buildSummary(task)
+}
+
+export async function reanalyzeFrame(taskId: string, index: number): Promise<void> {
+  assertAcceptingTasks()
+  if (!Number.isInteger(index) || index < 0) throw new Error('结果编号无效')
+  const task = getTask(taskId)
+  if (task.kind === 'behavior') throw new Error('仅物品识别任务支持重新判断')
+  const activeRun = taskSession.activeRuns.get(taskId)
+  if (activeRun && (!activeRun.reanalysis?.pending.size || activeRun.abortController.signal.aborted)) {
+    throw new Error('任务正在处理')
+  }
+  const reanalysis = activeRun?.reanalysis ?? { pending: new Map<number, Promise<void>>(), submitted: 0 }
+  if (reanalysis.pending.has(index)) throw new Error('该帧正在重新判断')
+  const frame = task.frames.find((frame) => frame.index === index)
+  if (!frame) throw new Error('结果不存在')
+
+  const modelConfig = getResolvedModelConfig()
+  Object.assign(frame, newFrame(frame.index, frame.timestampMs, frame.fileName), { detailRef: undefined })
+  task.status = 'analyzing'
+  task.phaseMessage = '正在重新判断'
+  task.errorMessage = ''
+  const run = activeRun ?? launchRun(task, async (controller) => {
+    while (reanalysis.pending.size > 0) {
+      await Promise.allSettled(reanalysis.pending.values())
+    }
+    await finishTask(task, controller.signal)
+  }, reanalysis)
+  const signal = run.abortController.signal
+  const indices = new Set([index])
+  const work = withTaskContext(taskId, async () => {
+    try {
+      await flushSave(task)
+      await analyzeFrames(task, modelConfig, signal, indices, { manageTaskProgress: false })
+      await localizeFrames(task, modelConfig, signal, indices, false)
+    } catch (error) {
+      if (signal.aborted) return
+      const message = error instanceof Error ? error.message : String(error)
+      markUnresolvedFrameFailed(frame, message)
+      emitFrame(task, frame)
+    }
+    if (!signal.aborted) await flushSave(task)
+  }).finally(() => {
+    reanalysis.pending.delete(index)
+    updateReanalysisProgress(task, reanalysis)
+  })
+  reanalysis.submitted += 1
+  reanalysis.pending.set(index, work)
+  emitFrame(task, frame)
+  updateReanalysisProgress(task, reanalysis)
+  await work
+  if (reanalysis.pending.size === 0) await run.completion
+}
+
+function updateReanalysisProgress(task: TaskRecord, reanalysis: FrameReanalysis): void {
+  const completed = reanalysis.submitted - reanalysis.pending.size
+  task.progress = Math.min(99, Math.round(completed / reanalysis.submitted * 100))
+  emitSummary(task, true)
+}
+
+async function analyzeAndLocalizeFrames(
+  task: TaskRecord,
+  modelConfig: ResolvedModelConfig,
+  signal: AbortSignal,
+  analysisIndices: Set<number>,
+  localizationIndices = analysisIndices
+): Promise<void> {
+  await analyzeFrames(task, modelConfig, signal, analysisIndices)
+  await localizeFrames(task, modelConfig, signal, localizationIndices)
+  await finishTask(task, signal)
 }
 
 export async function cancelActiveTask(taskId: string): Promise<boolean> {

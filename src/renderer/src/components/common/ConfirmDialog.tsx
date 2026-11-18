@@ -1,10 +1,9 @@
 import { AlertTriangle, X } from 'lucide-react'
-import { useEffect } from 'react'
+import { useEffect, useId } from 'react'
 
 export function ConfirmDialog({
   open,
   title,
-  description,
   confirmLabel = '确认',
   danger = false,
   busy = false,
@@ -13,13 +12,14 @@ export function ConfirmDialog({
 }: {
   open: boolean
   title: string
-  description: string
   confirmLabel?: string
   danger?: boolean
   busy?: boolean
   onConfirm: () => void
   onCancel: () => void
 }): React.JSX.Element | null {
+  const titleId = useId()
+
   useEffect(() => {
     if (!open) return
     const onKey = (event: KeyboardEvent): void => {
@@ -36,19 +36,20 @@ export function ConfirmDialog({
         className="confirm-dialog"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="confirm-title"
+        aria-labelledby={titleId}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <button className="icon-button dialog-close" onClick={onCancel} disabled={busy} aria-label="关闭">
           <X size={18} />
         </button>
-        <div className={`confirm-icon ${danger ? 'confirm-icon-danger' : ''}`}>
-          <AlertTriangle size={23} />
+        <div className="confirm-heading">
+          <div className={`confirm-icon ${danger ? 'confirm-icon-danger' : ''}`} aria-hidden="true">
+            <AlertTriangle size={23} />
+          </div>
+          <h2 id={titleId}>{title}</h2>
         </div>
-        <h2 id="confirm-title">{title}</h2>
-        <p>{description}</p>
         <div className="dialog-actions">
-          <button className="button button-ghost" onClick={onCancel} disabled={busy}>
+          <button className="button button-ghost" onClick={onCancel} disabled={busy} autoFocus>
             取消
           </button>
           <button

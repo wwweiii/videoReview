@@ -46,7 +46,8 @@ function delay(ms: number): Promise<void> {
 export function createRegionRunner(
   task: TaskRecord,
   modelConfig: ResolvedModelConfig,
-  parentSignal: AbortSignal
+  parentSignal: AbortSignal,
+  manageTaskProgress = true
 ): RegionRunner {
   const controller = new AbortController()
   const signal = AbortSignal.any([parentSignal, controller.signal])
@@ -101,6 +102,7 @@ export function createRegionRunner(
   }
 
   function bumpProgress(frame: FrameRecord): void {
+    if (!manageTaskProgress) return
     updateResultStats(task, frame)
     const total = task.frames.length
     const processed = getTaskStats(task).processed
@@ -199,7 +201,15 @@ export function createRegionRunner(
         await delay(REGION_POLL_INTERVAL_MS)
         continue
       }
-      await locate(frame)
+      try {
+        await locate(frame)
+      } catch (error) {
+        if (frame.regionStatus === 'pending') {
+          markFrame(frame, 'failed', '定位已中止')
+          emitFrame(task, frame)
+        }
+        throw error
+      }
     }
   }
 
@@ -218,7 +228,6 @@ export function createRegionRunner(
       frame.regionLevel = 'L0'
       frame.regionError = ''
       frame.regionRaw = ''
-      updateResultStats(task, frame)
       if (stopped) {
         markFrame(frame, profileError ? 'unsupported' : 'failed', profileError || '定位阶段已中止')
         emitFrame(task, frame)
@@ -226,6 +235,7 @@ export function createRegionRunner(
       }
       void ensureProfileStarted()
       queue.push(frame)
+      emitFrame(task, frame)
     },
     finish: async () => {
       producerDone = true
@@ -246,20 +256,18 @@ export function createRegionRunner(
       controller.abort()
       await Promise.allSettled([workersPromise, profilePromise ?? Promise.resolve()])
       failRest('定位已中止', 'failed')
-      for (const frame of task.frames) {
-        if (frame.regionStatus === 'pending') markFrame(frame, 'failed', '定位已中止')
-      }
     },
     counts: () => ({ planned, located })
   }
 }
 
-/** 只为本次失败重试涉及的帧补齐定位。 */
+/** 只为本次重试或重新判断涉及的帧补齐定位。 */
 export async function localizeFrames(
   task: TaskRecord,
   modelConfig: ResolvedModelConfig,
   signal: AbortSignal,
-  onlyIndices: Set<number>
+  onlyIndices: Set<number>,
+  manageTaskProgress = true
 ): Promise<void> {
   if (!task.config.localize) return
   const targets = regionCandidateFrames(task).filter(
@@ -267,11 +275,13 @@ export async function localizeFrames(
   )
   if (targets.length === 0) return
 
-  task.phaseMessage = '正在定位违禁物'
-  emitSummary(task, true)
-  await flushSave(task)
+  if (manageTaskProgress) {
+    task.phaseMessage = '正在定位违禁物'
+    emitSummary(task, true)
+    await flushSave(task)
+  }
 
-  const runner = createRegionRunner(task, modelConfig, signal)
+  const runner = createRegionRunner(task, modelConfig, signal, manageTaskProgress)
   for (const frame of targets) runner.enqueue(frame)
   try {
     await runner.finish()
@@ -280,5 +290,5 @@ export async function localizeFrames(
     throw error
   }
   if (signal.aborted) throw new Error('任务已取消')
-  task.phaseMessage = '正在分析'
+  if (manageTaskProgress) task.phaseMessage = '正在分析'
 }

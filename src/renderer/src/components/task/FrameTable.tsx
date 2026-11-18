@@ -7,7 +7,7 @@ import type { FrameRecord, TaskRecord } from '@shared/types'
 import { FrameRow } from './FrameRow'
 import { Pagination } from '../common/Pagination'
 
-export type FrameFilterKey = 'all' | 'abnormal' | 'review' | 'normal' | 'failed'
+export type FrameFilterKey = 'all' | 'abnormal' | 'review' | 'normal' | 'failed' | 'analyzing'
 
 const PAGE_SIZE = 10
 
@@ -35,9 +35,14 @@ export function FrameTable({
 
   useEffect(() => setPage(1), [filter, query, task.id])
 
+  const analyzingFrames = useMemo(() => task.frames.filter((frame) =>
+    frame.status === 'pending' || frame.status === 'analyzing' || frame.regionStatus === 'pending'
+  ), [task.frames])
+
   const filteredFrames = useMemo(() => {
     const keyword = query.trim().toLowerCase()
-    return task.frames.filter((frame) => {
+    const frames = filter === 'analyzing' ? analyzingFrames : task.frames
+    return frames.filter((frame) => {
       if (filter === 'abnormal' && frame.verdict !== 'abnormal') return false
       if (filter === 'review' && frame.verdict !== 'review') return false
       if (filter === 'normal' && frame.verdict !== 'normal') return false
@@ -54,7 +59,7 @@ export function FrameTable({
         .toLowerCase()
         .includes(keyword)
     })
-  }, [task.frames, filter, query])
+  }, [task.frames, analyzingFrames, filter, query])
 
   const totalPages = Math.max(1, Math.ceil(filteredFrames.length / PAGE_SIZE))
   const safePage = Math.min(page, totalPages)
@@ -68,7 +73,8 @@ export function FrameTable({
     { key: 'abnormal', label: '异常', count: stats.abnormal },
     { key: 'review', label: '待复核', count: stats.review },
     { key: 'normal', label: '正常', count: stats.normal },
-    { key: 'failed', label: '失败', count: stats.failed }
+    { key: 'failed', label: '失败', count: stats.failed },
+    { key: 'analyzing', label: '分析中', count: analyzingFrames.length }
   ]
 
   return (

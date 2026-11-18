@@ -20,7 +20,7 @@ import { newFrame, readTask, rememberTask, flushSave, scheduleSave, deleteStored
 import { finishTask, failTask } from '../../src/main/task/outcome'
 import { markUnresolvedFailed } from '../../src/main/task/analysis'
 import { createRegionRunner } from '../../src/main/task/regions'
-import { cancelActiveTask, getTask, initializeTaskManager, retryFailedFrames, shutdownTaskManager, startBehaviorReview, startReview } from '../../src/main/task/manager'
+import { cancelActiveTask, getFrameDiagnostics, getTask, getTaskView, initializeTaskManager, reanalyzeFrame, retryFailedFrames, shutdownTaskManager, startBehaviorReview, startReview } from '../../src/main/task/manager'
 import { taskSession } from '../../src/main/task/session'
 import { createSettingsAutosave, registerSettingsFlush, flushPendingSettings } from '../../src/renderer/src/lib/settings-autosave'
 import { normalizeImageScalePercent } from '../../src/shared/image'
@@ -544,6 +544,85 @@ test('失败重试不把模型不支持定位的成功帧当成失败', () => {
   assert.throws(() => retryFailedFrames(value.id), /没有需要重试的结果/)
   assert.equal(frame.regionStatus, 'unsupported')
   assert.equal(taskSession.activeRuns.has(value.id), false)
+})
+
+test('重新判断只更新指定帧，清除旧定位并保存新结果', async () => {
+  const other = { ...newFrame(0, 0, 'other.png'), status: 'completed', verdict: 'normal', confidence: 0.8 }
+  const frame = {
+    ...newFrame(1, 1000, 'target.png'), status: 'completed', verdict: 'abnormal',
+    categories: ['手机'], confidence: 0.95, regionStatus: 'ok', regionRaw: '旧定位响应',
+    regions: [{ id: 'previous', category: '手机', box: [0.1, 0.1, 0.2, 0.2] }]
+  }
+  const value = task({
+    frames: [other, frame], status: 'completed',
+    config: { ...initial, analysisMode: 'group', localize: true, confidenceThreshold: 0.6 }
+  })
+  const imagesDir = path.join(path.dirname(taskFile(value)), 'frames')
+  fs.mkdirSync(imagesDir, { recursive: true })
+  fs.writeFileSync(path.join(imagesDir, frame.fileName), Buffer.from('test image'))
+  await flushSave(value)
+  const otherBefore = { ...other }
+  let requests = 0
+  globalThis.fetch = async () => {
+    requests += 1
+    return response(normal)
+  }
+
+  const run = reanalyzeFrame(value.id, frame.index)
+  await assert.rejects(reanalyzeFrame(value.id, frame.index), /该帧正在重新判断/)
+  await run
+
+  assert.equal(requests, 1)
+  assert.deepEqual(other, otherBefore)
+  const saved = JSON.parse(fs.readFileSync(taskFile(value), 'utf8'))
+  const reanalyzed = saved.frames[1]
+  assert.equal(saved.status, 'completed')
+  assert.equal(reanalyzed.verdict, 'normal')
+  assert.equal(reanalyzed.fileName, frame.fileName)
+  assert.equal(reanalyzed.timestampMs, frame.timestampMs)
+  assert.deepEqual(reanalyzed.regions, [])
+  assert.equal(reanalyzed.regionStatus, 'none')
+  assert.equal((await getFrameDiagnostics(value.id, frame.index)).regionRaw, '')
+})
+
+test('同一任务的不同帧可并行重新判断，取消保留已完成的结果', async () => {
+  const frames = ['first.png', 'second.png'].map((fileName, index) => ({
+    ...newFrame(index, index * 1000, fileName), status: 'completed', verdict: 'normal', confidence: 0.8
+  }))
+  const value = task({ frames, status: 'completed' })
+  const imagesDir = path.join(path.dirname(taskFile(value)), 'frames')
+  fs.mkdirSync(imagesDir, { recursive: true })
+  for (const frame of frames) fs.writeFileSync(path.join(imagesDir, frame.fileName), Buffer.from('test image'))
+  await flushSave(value)
+  const settings = getPublicSettings()
+  saveSettings({ ...settings, section: 'model', requestConcurrency: 2 })
+  let requests = 0
+  globalThis.fetch = async (_url, options) => {
+    requests += 1
+    if (requests === 1) await abortable(options.signal)
+    return response(normal)
+  }
+
+  const runs = [reanalyzeFrame(value.id, 0)]
+  try {
+    await until(() => requests === 1)
+    runs.push(reanalyzeFrame(value.id, 1))
+    assert.deepEqual(getTaskView(value.id).reanalyzingFrameIndices, [0, 1])
+    await until(() => frames[1].confidence === normal.confidence)
+    await runs[1]
+    assert.equal(requests, 2)
+    assert.equal(value.status, 'analyzing')
+    assert.deepEqual(getTaskView(value.id).reanalyzingFrameIndices, [0])
+  } finally {
+    await cancelActiveTask(value.id)
+    await Promise.allSettled(runs)
+    saveSettings({ ...settings, section: 'model' })
+  }
+  const saved = JSON.parse(fs.readFileSync(taskFile(value), 'utf8'))
+  assert.equal(saved.status, 'cancelled')
+  assert.equal(saved.frames[0].status, 'failed')
+  assert.equal(saved.frames[1].status, 'completed')
+  assert.equal(saved.frames[1].confidence, normal.confidence)
 })
 
 test('判定阶段取消保留终态，未完成帧不再保持 pending', async () => {

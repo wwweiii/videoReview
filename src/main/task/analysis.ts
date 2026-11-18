@@ -21,6 +21,7 @@ export async function analyzeFrames(
   signal: AbortSignal,
   onlyIndices: Set<number> | null,
   hooks?: {
+    manageTaskProgress?: boolean
     onFrameAnalyzed?: (frame: FrameRecord) => void
     getCounts?: () => RegionCounts
   }
@@ -30,12 +31,15 @@ export async function analyzeFrames(
   )
   if (targetFrames.length === 0) return
 
-  task.status = 'analyzing'
-  task.progress = 0
-  task.phaseMessage = '正在分析'
-  task.errorMessage = ''
-  await flushSave(task)
-  emitSummary(task, true)
+  const manageTaskProgress = hooks?.manageTaskProgress ?? true
+  if (manageTaskProgress) {
+    task.status = 'analyzing'
+    task.progress = 0
+    task.phaseMessage = '正在分析'
+    task.errorMessage = ''
+    await flushSave(task)
+    emitSummary(task, true)
+  }
 
   const groups: FrameRecord[][] = []
   if (task.config.analysisMode === 'group') {
@@ -102,7 +106,7 @@ export async function analyzeFrames(
         }
         consecutiveFailures = 0
         for (const frame of group) updateResultStats(task, frame)
-        updateProgress(task, hooks?.getCounts?.())
+        if (manageTaskProgress) updateProgress(task, hooks?.getCounts?.())
         scheduleSave(task)
         for (const frame of group) {
           if (
@@ -130,7 +134,7 @@ export async function analyzeFrames(
           frame.model = modelConfig.label
         }
         for (const frame of group) updateResultStats(task, frame)
-        updateProgress(task, hooks?.getCounts?.())
+        if (manageTaskProgress) updateProgress(task, hooks?.getCounts?.())
         scheduleSave(task)
         for (const frame of group) emitFrame(task, frame)
         if (consecutiveFailures >= 4) {
@@ -192,15 +196,19 @@ export function markUnresolvedFailed(task: TaskRecord, reason: string): void {
   invalidateTaskStats(task)
   const now = new Date().toISOString()
   for (const frame of taskResults(task)) {
-    if (frame.regionStatus === 'pending') {
-      frame.regionStatus = 'failed'
-      frame.regionError = reason
-    }
-    if (frame.status === 'pending' || frame.status === 'analyzing') {
-      frame.status = 'failed'
-      frame.verdict = 'failed'
-      frame.error = reason
-      frame.analyzedAt = now
-    }
+    markUnresolvedFrameFailed(frame, reason, now)
+  }
+}
+
+export function markUnresolvedFrameFailed(frame: FrameRecord, reason: string, now = new Date().toISOString()): void {
+  if (frame.regionStatus === 'pending') {
+    frame.regionStatus = 'failed'
+    frame.regionError = reason
+  }
+  if (frame.status === 'pending' || frame.status === 'analyzing') {
+    frame.status = 'failed'
+    frame.verdict = 'failed'
+    frame.error = reason
+    frame.analyzedAt = now
   }
 }

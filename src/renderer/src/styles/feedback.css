@@ -78,29 +78,40 @@
 }
 
 .confirm-dialog {
-  position: relative;
-  width: min(420px, 92vw);
-  padding: 28px;
+  display: grid;
+  width: min(336px, 92vw);
+  padding: 12px;
   border-radius: var(--radius);
   background: #ffffff;
   box-shadow: 0 20px 60px rgba(31, 35, 41, 0.18);
 }
 
 .confirm-dialog .dialog-close {
-  position: absolute;
-  right: 16px;
-  top: 16px;
+  justify-self: end;
   width: 32px;
   height: 32px;
+}
+
+.confirm-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 1px;
+}
+
+.confirm-heading h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
 }
 
 .confirm-icon {
   width: 42px;
   height: 42px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 16px;
   border-radius: 11px;
   background: var(--amber-soft);
   color: var(--amber);
@@ -111,24 +122,11 @@
   color: var(--red);
 }
 
-.confirm-dialog h2 {
-  margin: 0 0 8px;
-  font-size: 20px;
-  font-weight: 600;
-}
-
-.confirm-dialog p {
-  margin: 0;
-  color: var(--text-2);
-  font-size: 15px;
-  line-height: 1.7;
-}
-
 .dialog-actions {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
-  margin-top: 26px;
+  margin-top: 8px;
 }
 
 /* Splash */

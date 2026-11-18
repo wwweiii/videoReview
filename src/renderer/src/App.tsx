@@ -171,6 +171,7 @@ export default function App(): React.JSX.Element {
         const next: TaskRecord = {
           ...previous,
           stats: summaryStats(event.summary),
+          reanalyzingFrameIndices: event.summary.reanalyzingFrameIndices,
           status: event.summary.status,
           progress: event.summary.progress,
           phaseMessage: event.summary.phaseMessage,

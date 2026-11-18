@@ -26,6 +26,7 @@ export interface FramelensApi {
   getFrameDiagnostics(taskId: string, frameIndex: number): Promise<FrameDiagnostics>
   cancelTask(taskId: string): Promise<boolean>
   retryFailedFrames(taskId: string): Promise<TaskSummary>
+  reanalyzeFrame(taskId: string, frameIndex: number): Promise<void>
   deleteTask(taskId: string): Promise<DeleteTaskResult>
   exportTaskCsv(taskId: string): Promise<ExportResult>
   saveSettings(input: SaveSettingsInput): Promise<PublicSettings>

@@ -49,6 +49,15 @@
   border-bottom: 1px solid var(--line);
 }
 
+.frame-drawer-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+}
+
+.frame-drawer-head .drawer-head-actions {
+  justify-self: end;
+}
+
 .drawer-head h2 {
   margin: 0;
   font-size: 19px;
@@ -126,9 +135,13 @@
 }
 
 .drawer-position {
-  margin-left: auto;
   color: var(--text-3);
   font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.drawer-reanalyze {
+  margin-left: auto;
 }
 
 .drawer-categories {

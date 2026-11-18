@@ -45,6 +45,8 @@ export function TaskDetailPage({
   const [busyAction, setBusyAction] = useState<'cancel' | 'retry' | 'export' | null>(
     null
   )
+  const [confirmReanalyzeIndex, setConfirmReanalyzeIndex] = useState<number | null>(null)
+  const [submittedReanalyses, setSubmittedReanalyses] = useState<Set<number>>(() => new Set())
 
   const behavior = task?.kind === 'behavior'
   const stats = task?.stats ?? countFrameStats(task ? taskResults(task) : [])
@@ -60,7 +62,7 @@ export function TaskDetailPage({
       : -1
 
   useEffect(() => {
-    if (!selectedFrame || !task) return
+    if (!selectedFrame || !task || confirmReanalyzeIndex !== null) return
     const onKey = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') setSelectedIndex(null)
       if (event.key === 'ArrowLeft' && selectedPosition > 0) {
@@ -72,7 +74,7 @@ export function TaskDetailPage({
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [selectedFrame, selectedPosition, task])
+  }, [selectedFrame, selectedPosition, task, confirmReanalyzeIndex])
 
   async function cancel(): Promise<void> {
     if (!task) return
@@ -98,6 +100,32 @@ export function TaskDetailPage({
       showToast('error', friendlyError(error))
     } finally {
       setBusyAction(null)
+    }
+  }
+
+  function isReanalyzing(index: number): boolean {
+    return submittedReanalyses.has(index) || (task?.reanalyzingFrameIndices?.includes(index) ?? false)
+  }
+
+  function canReanalyze(index: number): boolean {
+    return (!active || Boolean(task?.reanalyzingFrameIndices?.length)) &&
+      busyAction !== 'retry' && busyAction !== 'cancel' && !isReanalyzing(index)
+  }
+
+  async function reanalyze(index: number): Promise<void> {
+    if (!task || !canReanalyze(index)) return
+    setSubmittedReanalyses((previous) => new Set(previous).add(index))
+    try {
+      await flushPendingSettings()
+      await window.framelens.reanalyzeFrame(task.id, index)
+    } catch (error) {
+      showToast('error', friendlyError(error))
+    } finally {
+      setSubmittedReanalyses((previous) => {
+        const next = new Set(previous)
+        next.delete(index)
+        return next
+      })
     }
   }
 
@@ -175,7 +203,7 @@ export function TaskDetailPage({
               type="button"
               className="button button-secondary"
               onClick={() => void retry()}
-              disabled={busyAction === 'retry'}
+              disabled={busyAction === 'retry' || submittedReanalyses.size > 0}
             >
               {busyAction === 'retry' ? (
                 <Loader2 size={17} className="spin" />
@@ -234,11 +262,14 @@ export function TaskDetailPage({
         onOpenFrame={setSelectedIndex}
       />}
 
-      {selectedFrame ? (
+      {!behavior && selectedFrame ? (
         <FrameDrawer
           task={task}
           frame={selectedFrame}
           position={selectedPosition}
+          canReanalyze={canReanalyze(selectedFrame.index)}
+          reanalyzing={isReanalyzing(selectedFrame.index)}
+          onReanalyze={() => setConfirmReanalyzeIndex(selectedFrame.index)}
           onClose={() => setSelectedIndex(null)}
           onPrevious={() => {
             if (selectedPosition > 0) setSelectedIndex(task.frames[selectedPosition - 1].index)
@@ -252,9 +283,18 @@ export function TaskDetailPage({
       ) : null}
 
       <ConfirmDialog
+        open={confirmReanalyzeIndex !== null}
+        title="重新判断当前帧？"
+        onConfirm={() => {
+          if (confirmReanalyzeIndex === null) return
+          setConfirmReanalyzeIndex(null)
+          void reanalyze(confirmReanalyzeIndex)
+        }}
+        onCancel={() => setConfirmReanalyzeIndex(null)}
+      />
+      <ConfirmDialog
         open={confirmCancel}
         title="取消任务"
-        description="已完成的画面会保留。"
         confirmLabel="取消任务"
         danger
         busy={busyAction === 'cancel'}

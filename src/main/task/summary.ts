@@ -1,20 +1,23 @@
 import { getTaskStats, hasUnfinishedResults } from './stats'
 import { taskResults } from '@shared/behavior'
 import type { TaskRecord, TaskSummary } from '@shared/types'
+import { reanalyzingFrameIndices } from './session'
 
 /** 由任务记录生成列表/事件使用的摘要（统计口径由 @shared/task 统一） */
 export function buildSummary(task: TaskRecord): TaskSummary {
   const frames = taskResults(task)
   const stats = getTaskStats(task)
+  const reanalyzing = reanalyzingFrameIndices(task.id)
 
   let progress = task.progress
   if (task.status === 'completed' || task.status === 'completed_with_errors') progress = 100
-  else if (task.status === 'analyzing' && frames.length > 0 && task.progress === 0) {
+  else if (task.status === 'analyzing' && !reanalyzing && frames.length > 0 && task.progress === 0) {
     progress = Math.round((stats.processed / frames.length) * 1000) / 10
   }
 
   return {
     hasUnfinishedResults: hasUnfinishedResults(task),
+    ...(reanalyzing ? { reanalyzingFrameIndices: reanalyzing } : {}),
     saveError: task.saveError || '',
     id: task.id,
     kind: task.kind ?? 'items',

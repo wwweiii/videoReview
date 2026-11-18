@@ -176,6 +176,7 @@ export interface FrameRecord {
 export interface TaskRecord {
   schemaVersion?: number
   stats?: FrameStats
+  reanalyzingFrameIndices?: number[]
   /** 当前会话的落盘错误；恢复保存后清空。 */
   saveError?: string
   id: string
@@ -199,6 +200,7 @@ export interface TaskRecord {
 
 export interface TaskSummary {
   hasUnfinishedResults?: boolean
+  reanalyzingFrameIndices?: number[]
   saveError?: string
   id: string
   kind?: TaskKind

@@ -40,6 +40,28 @@ export async function verifySettingsUi(videoPath: string, check: Check): Promise
       button.click();
     })()`)
   }
+  async function hasConfirmationLayout(title: string): Promise<boolean> {
+    return evaluate(`(() => {
+      const dialog = document.querySelector('.confirm-dialog');
+      const heading = dialog?.querySelector('h2');
+      if (heading?.textContent !== ${JSON.stringify(title)} || dialog.querySelector('p')) return false;
+      const icon = dialog.querySelector('.confirm-icon')?.getBoundingClientRect();
+      const text = heading.getBoundingClientRect();
+      const panel = dialog.getBoundingClientRect();
+      const titleRow = dialog.querySelector('.confirm-heading').getBoundingClientRect();
+      const close = dialog.querySelector('.dialog-close').getBoundingClientRect();
+      const actions = dialog.querySelector('.dialog-actions').getBoundingClientRect();
+      const headingTop = titleRow.top - close.bottom;
+      const headingBottom = actions.top - titleRow.bottom;
+      const insets = [close.top - panel.top, panel.right - close.right,
+        panel.right - actions.right, panel.bottom - actions.bottom, titleRow.left - panel.left];
+      return Boolean(icon && icon.right < text.left &&
+        Math.abs(panel.width - 336) < 1 &&
+        insets.every(inset => Math.abs(inset - 12) < 0.5) &&
+        Math.abs(icon.top + icon.height / 2 - text.top - text.height / 2) < 1 &&
+        Math.abs(headingTop - 1) < 0.5 && Math.abs(headingBottom - 8) < 1);
+    })()`)
+  }
   async function editInterval(value: number): Promise<void> {
     await evaluate(`(() => {
       const field = [...document.querySelectorAll('.form-field')].find(el => el.querySelector('span')?.textContent === '抽帧间隔');
@@ -95,6 +117,9 @@ export async function verifySettingsUi(videoPath: string, check: Check): Promise
 
     await click('.nav-item', '物品识别记录')
     await until(() => evaluate(`Boolean(document.querySelector('.history-row'))`))
+    await evaluate(`document.querySelector('.history-actions [aria-label="删除"]').click()`)
+    check('删除任务弹窗使用共享三行布局', await hasConfirmationLayout('删除任务'))
+    await click('.dialog-actions .button-ghost', '取消')
     await evaluate(`document.querySelector('.history-row').click()`)
     await until(() => evaluate(`Boolean(document.querySelector('.frame-row'))`))
     check('物品任务详情已移除重新定位按钮及 preload 接口', await evaluate(`![...document.querySelectorAll('.detail-actions button')].some(el => el.textContent.trim() === '重新定位') && !('relocalizeTask' in window.framelens)`))
@@ -120,6 +145,9 @@ export async function verifySettingsUi(videoPath: string, check: Check): Promise
     await until(() => getTask(retryTask.id).status === 'analyzing')
     await until(() => evaluate(`[...document.querySelectorAll('.detail-actions button')].some(el => el.textContent.trim() === '取消')`))
     check('重试期间隐藏失败重试按钮，避免重复提交', await evaluate(`![...document.querySelectorAll('.detail-actions button')].some(el => el.textContent.trim() === '失败重试')`))
+    await click('.detail-actions button', '取消')
+    check('取消任务弹窗使用共享三行布局', await hasConfirmationLayout('取消任务'))
+    await click('.dialog-actions .button-ghost', '取消')
     await until(() => getTask(retryTask.id).status === 'completed')
     const countsAfter = (await (await fetch(healthUrl)).json()).counts
     check('点击失败重试仅重新判定失败帧并补跑失败定位', failedJudgment.status === 'completed' && failedRegion.regionStatus === 'ok' && countsAfter.judgmentCount === countsBefore.judgmentCount + 1 && countsAfter.locateCount === countsBefore.locateCount + 1)
@@ -127,8 +155,111 @@ export async function verifySettingsUi(videoPath: string, check: Check): Promise
     await until(() => evaluate(`!document.querySelector('.progress-block')`))
     check('全部重试成功后自动隐藏失败重试按钮', await evaluate(`![...document.querySelectorAll('.detail-actions button')].some(el => el.textContent.trim() === '失败重试')`))
     await evaluate(`document.querySelector('.frame-row').click()`)
+    check('帧页码居中显示在顶部导航行', await evaluate(`(() => {
+      const header = document.querySelector('.frame-drawer-head');
+      const position = header.querySelector('.drawer-position');
+      const center = element => {
+        const rect = element.getBoundingClientRect();
+        return rect.left + rect.width / 2;
+      };
+      return position.textContent.trim() === '1 / ${retryTask.frames.length}' && Math.abs(center(position) - center(header)) < 1;
+    })()`))
+    await click('.drawer-head-nav', '下一帧')
+    check('切帧后顶部页码随之更新', await evaluate(`document.querySelector('.drawer-position').textContent.trim() === '2 / ${retryTask.frames.length}'`))
     check('任务详情已移除调用轨迹入口', await evaluate(`![...document.querySelectorAll('.drawer button')].some(el => el.textContent.trim() === '调用轨迹')`))
     await evaluate(`document.querySelector('.drawer-head [aria-label="关闭"]').click()`)
+
+    const targetPosition = retryTask.frames.indexOf(failedRegion)
+    await evaluate(`document.querySelectorAll('.frame-row')[${targetPosition}].click()`)
+    const untouchedFrames = () => JSON.stringify(retryTask.frames.filter(frame => frame !== failedRegion))
+    const untouchedBefore = untouchedFrames()
+    check('重新判断按钮仅显示文字', await evaluate(`(() => {
+      const button = document.querySelector('.drawer-reanalyze');
+      return button?.textContent.trim() === '重新判断' && button.childElementCount === 0;
+    })()`))
+    await click('.drawer-badges button', '重新判断')
+    check('重新判断先显示共享三行确认弹窗', await hasConfirmationLayout('重新判断当前帧？'))
+    await evaluate(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`)
+    const countsAfterCancel = (await (await fetch(healthUrl)).json()).counts
+    check('取消确认保留当前帧且不发出请求', countsAfterCancel.judgmentCount === countsAfter.judgmentCount &&
+      await evaluate(`!document.querySelector('.confirm-dialog') && document.querySelector('.drawer-position')?.textContent.trim() === '${targetPosition + 1} / ${retryTask.frames.length}'`))
+
+    const expectedVerdicts = countsAfterCancel.judgmentCount % 2 === 0 ? ['normal', 'abnormal'] : ['abnormal', 'normal']
+    for (const expected of expectedVerdicts) {
+      const analyzedAt = failedRegion.analyzedAt
+      await click('.drawer-badges button', '重新判断')
+      await click('.confirm-dialog .button-primary', '确认')
+      await until(() => retryTask.status === 'completed' && failedRegion.analyzedAt !== analyzedAt)
+      await until(() => evaluate(`!document.querySelector('.drawer-reanalyze').disabled`))
+      const label = expected === 'abnormal' ? '异常' : '正常'
+      check(`重新判断更新抽屉中的${label}结果和定位状态`, failedRegion.verdict === expected &&
+        (expected === 'abnormal' ? failedRegion.regions.length > 0 : failedRegion.regions.length === 0 && failedRegion.regionStatus === 'none') &&
+        await evaluate(`document.querySelector('.drawer-badges .badge').textContent === '${label}'`))
+    }
+    const countsAfterReanalyze = (await (await fetch(healthUrl)).json()).counts
+    check('重新判断只对选中的帧发起判定和定位', untouchedFrames() === untouchedBefore &&
+      countsAfterReanalyze.judgmentCount === countsAfterCancel.judgmentCount + 2 &&
+      countsAfterReanalyze.locateCount === countsAfterCancel.locateCount + 1)
+
+    const moveLabel = targetPosition < retryTask.frames.length - 1 ? '下一帧' : '上一帧'
+    const otherFrame = retryTask.frames[targetPosition + (moveLabel === '下一帧' ? 1 : -1)]
+    const previousTimes = [failedRegion.analyzedAt, otherFrame.analyzedAt]
+    const originalFetch = globalThis.fetch
+    let releaseJudgments!: () => void
+    let releaseLocalization!: () => void
+    const heldJudgments = new Promise<void>((resolve) => { releaseJudgments = resolve })
+    const heldLocalization = new Promise<void>((resolve) => { releaseLocalization = resolve })
+    let requests = 0
+    let localizationStarted = false
+    globalThis.fetch = async (input, init) => {
+      if (typeof init?.body === 'string') {
+        requests += 1
+        if (requests <= 2) {
+          await heldJudgments
+        } else {
+          localizationStarted = true
+          await heldLocalization
+        }
+      }
+      return originalFetch(input, init)
+    }
+    try {
+      await click('.drawer-badges button', '重新判断')
+      await click('.confirm-dialog .button-primary', '确认')
+      await until(() => requests === 1)
+      check('重新判断中的帧禁用重复提交', await evaluate(`document.querySelector('.drawer-reanalyze').disabled`))
+      await click('.drawer-head-nav', moveLabel)
+      await click('.drawer-badges button', '重新判断')
+      await click('.confirm-dialog .button-primary', '确认')
+      await until(() => requests === 2)
+      check('同一任务两帧同时发起重新判断', retryTask.status === 'analyzing' &&
+        await evaluate(`document.querySelector('.drawer-reanalyze').textContent.trim() === '正在判断'`))
+      await evaluate(`document.querySelector('.drawer-head [aria-label="关闭"]').click()`)
+      await until(() => evaluate(`document.querySelector('.filter-tab:last-child').textContent === '分析中2'`))
+      await click('.filter-tab', '分析中2')
+      check('分析中筛选在失败之后，并展示待判定的帧', await evaluate(`
+        document.querySelector('.filter-tab.is-active').previousElementSibling.textContent.startsWith('失败') &&
+        document.querySelectorAll('.frame-row').length === 2
+      `))
+      releaseJudgments()
+      await until(() => localizationStarted)
+      await until(() => evaluate(`document.querySelector('.filter-tab.is-active').textContent === '分析中1'`))
+      check('定位中的帧留在分析中筛选里', await evaluate(`
+        document.querySelectorAll('.frame-row').length === 1 &&
+        document.querySelector('.frame-row .badge').textContent === '异常'
+      `))
+    } finally {
+      releaseJudgments()
+      releaseLocalization()
+      globalThis.fetch = originalFetch
+    }
+    await until(() => retryTask.status === 'completed' &&
+      failedRegion.analyzedAt !== previousTimes[0] && otherFrame.analyzedAt !== previousTimes[1])
+    check('并行重新判断完成后两帧均更新', failedRegion.status === 'completed' && otherFrame.status === 'completed')
+    await until(() => evaluate(`document.querySelector('.filter-tab.is-active').textContent === '分析中0'`))
+    check('判定和定位完成后自动移出分析中筛选', await evaluate(`
+      !document.querySelector('.frame-row') && document.querySelector('.empty-result').textContent === '暂无结果'
+    `))
 
     await click('.nav-item', '设置')
     check('物品页只显示启用项且不包含勾选框', await evaluate(`document.querySelectorAll('.detect-list .detect-item').length === ${getPublicSettings().prohibitedItems.length} && !document.querySelector('.detect-list [role="checkbox"], .detect-list input[type="checkbox"], .detect-list .check-box')`))

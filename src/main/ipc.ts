@@ -20,6 +20,7 @@ import {
   getTaskView,
   getFrameDiagnostics,
   listTasks,
+  reanalyzeFrame,
   retryFailedFrames,
   startReview,
   startBehaviorReview
@@ -62,6 +63,7 @@ export function registerIpcHandlers(): void {
   })
   ipcMain.handle('task:cancel', async (_event, taskId: string) => cancelActiveTask(taskId))
   ipcMain.handle('task:retryFailed', async (_event, taskId: string) => retryFailedFrames(taskId))
+  ipcMain.handle('task:reanalyzeFrame', async (_event, taskId: string, index: number) => reanalyzeFrame(taskId, index))
   ipcMain.handle('task:delete', async (_event, taskId: string): Promise<DeleteTaskResult> => {
     await deleteTask(taskId)
     return { deleted: true }

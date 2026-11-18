@@ -133,7 +133,6 @@ export function TaskHistoryPage({
       <ConfirmDialog
         open={Boolean(pendingDelete)}
         title="删除任务"
-        description="任务记录和画面将被删除，且无法恢复。"
         confirmLabel="删除"
         danger
         busy={deleting}

@@ -18,6 +18,9 @@ export function FrameDrawer({
   task,
   frame,
   position,
+  canReanalyze,
+  reanalyzing,
+  onReanalyze,
   onClose,
   onPrevious,
   onNext
@@ -25,6 +28,9 @@ export function FrameDrawer({
   task: TaskRecord
   frame: FrameRecord
   position: number
+  canReanalyze: boolean
+  reanalyzing: boolean
+  onReanalyze: () => void
   onClose: () => void
   onPrevious: () => void
   onNext: () => void
@@ -41,6 +47,12 @@ export function FrameDrawer({
     setPinnedRegionIds([])
     setHoverRegionId(null)
   }, [frame.fileName])
+
+  useEffect(() => {
+    if (!reanalyzing) return
+    setPinnedRegionIds([])
+    setHoverRegionId(null)
+  }, [reanalyzing])
 
   const regions = frame.regions
   const notice = regions.length === 0 ? regionNotice(frame) : null
@@ -68,7 +80,7 @@ export function FrameDrawer({
         aria-modal="true"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <div className="drawer-head">
+        <div className="drawer-head frame-drawer-head">
           <div className="drawer-head-title">
             <h2>{formatTimeMs(frame.timestampMs)}</h2>
             <button
@@ -81,6 +93,9 @@ export function FrameDrawer({
               上一帧
             </button>
           </div>
+          <span className="drawer-position">
+            {position + 1} / {task.frames.length}
+          </span>
           <div className="drawer-head-actions">
             <button
               type="button"
@@ -135,9 +150,14 @@ export function FrameDrawer({
             <span className="drawer-confidence">
               {frame.confidence === null ? '—' : `${Math.round(frame.confidence * 100)}%`}
             </span>
-            <span className="drawer-position">
-              {position + 1} / {task.frames.length}
-            </span>
+            <button
+              type="button"
+              className="button button-secondary button-sm drawer-reanalyze"
+              disabled={!canReanalyze}
+              onClick={onReanalyze}
+            >
+              {reanalyzing ? '正在判断' : '重新判断'}
+            </button>
           </div>
 
           {frame.categories.length > 0 ? (
