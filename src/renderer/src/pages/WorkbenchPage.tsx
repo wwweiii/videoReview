@@ -2,6 +2,7 @@ import { FileVideo2, Loader2, Trash2 } from 'lucide-react'
 import { useRef, useState, type DragEvent, type JSX } from 'react'
 import { isTaskActive } from '@shared/task'
 import type { TaskKind, TaskSummary } from '@shared/types'
+import { VideoThumbnail } from '../components/common/VideoThumbnail'
 import { friendlyError, type ShowToast } from '../lib/ui'
 import { flushPendingSettings } from '../lib/settings-autosave'
 
@@ -182,7 +183,7 @@ export function WorkbenchPage({
             {files.map((file) => (
               <div className="uploaded-file-row" key={file.path} title={file.path}>
                 <div className="uploaded-file-info">
-                  <span className="uploaded-file-icon"><FileVideo2 size={19} /></span>
+                  <VideoThumbnail filePath={file.path} uploadKey={file} />
                   <span className="uploaded-file-name">{file.name}</span>
                 </div>
                 <div className="uploaded-file-actions">

@@ -120,18 +120,6 @@
   gap: 12px;
 }
 
-.uploaded-file-icon {
-  width: 36px;
-  height: 36px;
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 9px;
-  background: var(--soft);
-  color: var(--text-2);
-}
-
 .uploaded-file-name {
   min-width: 0;
   overflow: hidden;

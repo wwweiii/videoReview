@@ -4,7 +4,7 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { Readable } from 'node:stream'
 import { logger } from '../logger'
-import { getFramesDir, getThumbsDir, isTaskId } from '../paths'
+import { getFramesDir, getTaskThumbnailPath, getThumbsDir, isTaskId } from '../paths'
 import { readTask } from '../task/store'
 
 /** 对已导入的行为任务提供流式读取，支持播放器 seek，不将整个视频读入内存。 */
@@ -62,6 +62,14 @@ export function registerMediaProtocol(): void {
     try {
       const url = new URL(request.url)
       if (url.host === 'video') return videoResponse(request, url)
+      if (url.host === 'task-thumbnails') {
+        const taskId = url.pathname.slice(1)
+        if (!isTaskId(taskId)) return new Response('Not found', { status: 404 })
+        if (request.method !== 'GET') return new Response(null, { status: 405 })
+        const thumbnailPath = getTaskThumbnailPath(taskId)
+        if (!fs.existsSync(thumbnailPath)) return new Response('Not found', { status: 404 })
+        return net.fetch(pathToFileURL(thumbnailPath).toString())
+      }
       if (url.host !== 'frames') {
         return new Response('Not found', { status: 404 })
       }

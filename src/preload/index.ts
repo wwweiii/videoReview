@@ -18,6 +18,7 @@ import type {
 const api: FramelensApi = {
   getBootstrap: (): Promise<BootstrapData> => ipcRenderer.invoke('app:bootstrap'),
   selectVideoFile: (): Promise<FileDialogResult> => ipcRenderer.invoke('dialog:selectVideo'),
+  getVideoThumbnail: (filePath: string) => ipcRenderer.invoke('video:thumbnail', filePath),
   startReview: (filePath: string): Promise<TaskSummary> =>
     ipcRenderer.invoke('task:start', filePath),
   startBehaviorReview: (filePath: string): Promise<TaskSummary> =>

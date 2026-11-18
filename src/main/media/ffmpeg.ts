@@ -1,14 +1,60 @@
-import { spawn, type ChildProcessByStdio } from 'node:child_process'
+import { execFile, spawn, type ChildProcessByStdio } from 'node:child_process'
 import fs from 'node:fs'
 import { imageScaleFilter } from './image-scale'
 import path from 'node:path'
 import type { Readable } from 'node:stream'
+import { promisify } from 'node:util'
 import type { VideoFileInfo } from '@shared/types'
 import { getFfmpegPath, getFramesDir } from '../paths'
 import { logger } from '../logger'
-import { extractionScheduler } from '../runtime/scheduler'
+import { extractionScheduler, FairScheduler } from '../runtime/scheduler'
 
 type FFmpegProcess = ChildProcessByStdio<null, Readable, Readable>
+
+const runFfmpeg = promisify(execFile)
+const thumbnailScheduler = new FairScheduler(2)
+const thumbnailCache = new Map<string, Promise<Buffer | null>>()
+const MAX_CACHED_THUMBNAILS = 128
+
+export async function getVideoThumbnail(filePath: string): Promise<string | null> {
+  const thumbnail = await getVideoThumbnailBuffer(filePath)
+  return thumbnail ? `data:image/jpeg;base64,${thumbnail.toString('base64')}` : null
+}
+
+export async function getVideoThumbnailBuffer(filePathInput: string): Promise<Buffer | null> {
+  if (!path.isAbsolute(filePathInput)) return null
+  const filePath = path.resolve(filePathInput)
+  try {
+    const stat = await fs.promises.stat(filePath)
+    if (!stat.isFile()) return null
+
+    const key = JSON.stringify([filePath, stat.size, stat.mtimeMs, stat.ctimeMs])
+    const cached = thumbnailCache.get(key)
+    if (cached) return cached
+
+    const pending = thumbnailScheduler.run(filePath, undefined, async () => {
+      const { stdout } = await runFfmpeg(getFfmpegPath(), [
+        '-hide_banner', '-loglevel', 'error', '-nostdin',
+        '-threads', '1', '-filter_threads', '1',
+        '-protocol_whitelist', 'file', '-i', filePath,
+        '-map', '0:V:0', '-frames:v', '1',
+        '-vf', "scale=w='max(1,round(256*min(dar,1)))':h='max(1,round(256*min(1/dar,1)))',setsar=1",
+        '-c:v', 'mjpeg', '-q:v', '4', '-threads', '1', '-f', 'image2pipe', 'pipe:1'
+      ], { encoding: 'buffer', maxBuffer: 256 * 1024, timeout: 15_000, windowsHide: true })
+      return stdout.length ? stdout : null
+    }).catch(() => null)
+    thumbnailCache.set(key, pending)
+    if (thumbnailCache.size > MAX_CACHED_THUMBNAILS) {
+      thumbnailCache.delete(thumbnailCache.keys().next().value!)
+    }
+
+    const thumbnail = await pending
+    if (!thumbnail && thumbnailCache.get(key) === pending) thumbnailCache.delete(key)
+    return thumbnail
+  } catch {
+    return null
+  }
+}
 
 export interface ExtractedFrame {
   index: number

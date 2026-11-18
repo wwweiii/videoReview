@@ -4,7 +4,7 @@ import { DEFAULT_PROHIBITED_ITEMS } from '@shared/items'
 import type { FrameRecord, TaskRecord, TaskSummary } from '@shared/types'
 import { isTaskActive } from '@shared/task'
 import { logger } from '../logger'
-import { getTaskDir, getTaskFilePath, getTasksDir, isTaskId } from '../paths'
+import { getTaskDir, getTaskFilePath, getTaskThumbnailPath, getTasksDir, isTaskId } from '../paths'
 import { emitSummary } from './event'
 import { prepareTaskSnapshot } from './diagnostics'
 import { buildSummary } from './summary'
@@ -121,7 +121,7 @@ export function readTask(taskId: string): TaskRecord | null {
   }
 }
 
-function writeTaskNow(task: TaskRecord, snapshot?: Partial<TaskRecord>): Promise<void> {
+function writeTaskNow(task: TaskRecord, snapshot?: Partial<TaskRecord>, thumbnail?: Buffer | null): Promise<void> {
   const filePath = getTaskFilePath(task.id)
   const previous = saveChains.get(task.id) ?? Promise.resolve()
   const next = previous
@@ -131,6 +131,18 @@ function writeTaskNow(task: TaskRecord, snapshot?: Partial<TaskRecord>): Promise
       const prepared = await prepareTaskSnapshot(task, snapshot)
       const json = JSON.stringify(prepared.record)
       await fs.promises.mkdir(path.dirname(filePath), { recursive: true })
+      // 首次写入时在任务清单可见之前保存图片，后续保存结果沿用同一张图。
+      if (thumbnail) {
+        const thumbnailPath = getTaskThumbnailPath(task.id)
+        const temporaryThumbnail = `${thumbnailPath}.tmp`
+        try {
+          await fs.promises.writeFile(temporaryThumbnail, thumbnail)
+          await fs.promises.rename(temporaryThumbnail, thumbnailPath)
+        } catch (error) {
+          logger.warn('保存任务首帧缩略图失败', error)
+          await fs.promises.rm(temporaryThumbnail, { force: true }).catch(() => undefined)
+        }
+      }
       const temporary = `${filePath}.${Date.now()}.tmp`
       try {
         await fs.promises.writeFile(temporary, json, 'utf8')
@@ -196,7 +208,7 @@ export function scheduleSave(task: TaskRecord, immediate = false): void {
   saveTimers.set(task.id, timer)
 }
 
-export async function flushSave(task: TaskRecord, snapshot?: Partial<TaskRecord>): Promise<void> {
+export async function flushSave(task: TaskRecord, snapshot?: Partial<TaskRecord>, thumbnail?: Buffer | null): Promise<void> {
   rememberTask(task)
   const timer = saveTimers.get(task.id)
   if (timer) {
@@ -206,7 +218,7 @@ export async function flushSave(task: TaskRecord, snapshot?: Partial<TaskRecord>
   dirtySince.delete(task.id)
   dirtyTasks.add(task)
   task.updatedAt = new Date().toISOString()
-  await writeTaskNow(task, snapshot)
+  await writeTaskNow(task, snapshot, thumbnail)
 }
 
 export async function flushAllTasks(): Promise<void> {

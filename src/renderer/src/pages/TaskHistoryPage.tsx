@@ -1,9 +1,10 @@
-import { FileVideo2, Inbox, Loader2, RefreshCw, Trash2 } from 'lucide-react'
+import { Inbox, Loader2, RefreshCw, Trash2 } from 'lucide-react'
 import { useState, type JSX } from 'react'
 import { isTaskActive } from '@shared/task'
 import type { TaskKind, TaskSummary } from '@shared/types'
 import { ConfirmDialog } from '../components/common/ConfirmDialog'
 import { StatusBadge } from '../components/common/StatusBadge'
+import { VideoThumbnail } from '../components/common/VideoThumbnail'
 import { friendlyError, type ShowToast } from '../lib/ui'
 
 function formatCreatedAt(value: string): string {
@@ -95,9 +96,7 @@ export function TaskHistoryPage({
               }}
             >
               <span className="history-file">
-                <span className="history-file-icon">
-                  <FileVideo2 size={20} />
-                </span>
+                <VideoThumbnail savedSrc={`vr-media://task-thumbnails/${task.id}`} />
                 <span className="history-file-name">{task.name}</span>
               </span>
               <span className="history-time">{formatCreatedAt(task.createdAt)}</span>

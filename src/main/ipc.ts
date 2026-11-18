@@ -10,6 +10,7 @@ import type {
 import { getResolvedModelConfigForTesting } from './config/model-config'
 import { getPublicSettings, isModelTracingEnabled, saveSettings } from './config/settings'
 import { probeModelConfig } from './localization/probe'
+import { getVideoThumbnail } from './media/ffmpeg'
 import { testModelConnection } from './model/client'
 import { getModelCallTrace, listModelCallTraces } from './model/call-history'
 import { completeWindowClose } from './app/window'
@@ -51,6 +52,11 @@ export function registerIpcHandlers(): void {
       : await dialog.showOpenDialog(options)
     if (result.canceled || result.filePaths.length === 0) return { canceled: true }
     return { canceled: false, path: result.filePaths[0], paths: result.filePaths }
+  })
+
+  ipcMain.handle('video:thumbnail', (event, filePath: unknown) => {
+    if (event.senderFrame !== event.sender.mainFrame || typeof filePath !== 'string') return null
+    return getVideoThumbnail(filePath)
   })
 
   ipcMain.handle('task:start', async (_event, filePath: string) => startReview(filePath))

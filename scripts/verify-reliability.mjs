@@ -28,6 +28,7 @@ try {
       ` : `
         import fs from 'node:fs'; import path from 'node:path';
         export async function probeVideo(filePath) {return {fileName:path.basename(filePath),filePath,durationMs:2000,width:640,height:360,fileSizeBytes:1}};
+        export async function getVideoThumbnailBuffer() { return null }
         export async function extractFrames(options) {
           if(globalThis.extractionHook) await globalThis.extractionHook(options);
           if(options.signal.aborted) throw new Error('任务已取消');

@@ -19,6 +19,7 @@ import type {
 export interface FramelensApi {
   getBootstrap(): Promise<BootstrapData>
   selectVideoFile(): Promise<FileDialogResult>
+  getVideoThumbnail(filePath: string): Promise<string | null>
   startReview(filePath: string): Promise<TaskSummary>
   startBehaviorReview(filePath: string): Promise<TaskSummary>
   listTasks(): Promise<TaskSummary[]>

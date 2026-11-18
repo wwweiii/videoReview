@@ -7,7 +7,7 @@ import { getTaskStats, invalidateTaskStats } from './stats'
 import { readFrameDiagnostics } from './diagnostics'
 import { getResolvedModelConfig, type ResolvedModelConfig } from '../config/model-config'
 import { getAnalysisConfig, getBehaviorConfig } from '../config/settings'
-import { probeVideo } from '../media/ffmpeg'
+import { getVideoThumbnailBuffer, probeVideo } from '../media/ffmpeg'
 import { analyzeFrames, markUnresolvedFailed, markUnresolvedFrameFailed } from './analysis'
 import { clearSummaryThrottle, emitFrame, emitSummary } from './event'
 import { regionCandidateFrames, localizeFrames } from './regions'
@@ -127,6 +127,8 @@ async function startTask(filePath: string, kind: TaskKind): Promise<TaskSummary>
   if (kind === 'behavior' && !behaviorConfig?.behaviors.length) throw new Error('请先在设置中添加至少一个识别行为')
   const source = await probeVideo(filePath)
   assertAcceptingTasks()
+  const thumbnail = await getVideoThumbnailBuffer(source.filePath)
+  assertAcceptingTasks()
   const now = new Date().toISOString()
   const task: TaskRecord = {
     id: crypto.randomUUID(), kind, name: source.fileName, source,
@@ -137,7 +139,7 @@ async function startTask(filePath: string, kind: TaskKind): Promise<TaskSummary>
   }
   rememberTask(task)
   try {
-    await flushSave(task)
+    await flushSave(task, undefined, thumbnail)
     assertAcceptingTasks()
   } catch (error) {
     await failTask(task, error, false)

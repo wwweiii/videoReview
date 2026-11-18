@@ -2,12 +2,13 @@
  * Electron 端到端冒烟（scripts/smoke/run-e2e.mjs 的入口）：
  * 真实 ffmpeg 抽帧 → 判定 → 定位 → task.json → 失败重试。
  */
-import { app, nativeImage } from 'electron'
+import { app, nativeImage, net } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { spawn, type ChildProcess } from 'node:child_process'
-import { configureElectronDataPath, getDataDir } from '../../src/main/paths'
+import { configureElectronDataPath, getDataDir, getTaskThumbnailPath } from '../../src/main/paths'
+import { registerMediaProtocol, registerMediaSchemes } from '../../src/main/app/media-protocol'
 import { verifySettingsUi } from './settings-ui'
 import { extractFrames } from '../../src/main/media/ffmpeg'
 import { imageDataUrl, clearImageCache, imageCacheMetrics } from '../../src/main/media/images'
@@ -29,6 +30,7 @@ import {
 const root = process.cwd()
 const results: Array<{ name: string; ok: boolean; detail: string }> = []
 
+registerMediaSchemes()
 configureElectronDataPath()
 // 隐藏窗口销毁后仍需等待任务及汇总，不让 Electron 默认退出造成假阳性。
 app.on('window-all-closed', () => {})
@@ -319,6 +321,16 @@ async function main(): Promise<void> {
     await deleteTask(cancelledId)
     await new Promise((resolve) => setTimeout(resolve, 100))
     check('取消返回后删除目录不再被抽帧进程重建', !fs.existsSync(path.join(getDataDir(), 'tasks', cancelledId)))
+
+    fs.renameSync(videoPath, path.join(getDataDir(), 'moved-smoke-video.mp4'))
+    for (const [label, taskId] of [['物品', summary.id], ['行为', behaviorSummary.id]]) {
+      const saved = fs.readFileSync(getTaskThumbnailPath(taskId))
+      const response = await net.fetch(`vr-media://task-thumbnails/${taskId}`)
+      const loaded = Buffer.from(await response.arrayBuffer())
+      const size = nativeImage.createFromBuffer(loaded).getSize()
+      check(`源视频移走后仍能从任务目录加载${label}记录的首帧缩略图`,
+        response.ok && loaded.equals(saved) && size.width === 256 && size.height === 144)
+    }
   } finally {
     mock.kill()
     try {
@@ -337,6 +349,7 @@ async function main(): Promise<void> {
 }
 
 app.whenReady().then(() => {
+  registerMediaProtocol()
   main().catch((error) => {
     console.error('端到端冒烟失败：', error)
     app.exit(1)

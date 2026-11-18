@@ -89,6 +89,10 @@ export function getTaskFilePath(taskId: string): string {
   return path.join(getTaskDir(taskId), 'task.json')
 }
 
+export function getTaskThumbnailPath(taskId: string): string {
+  return path.join(getTaskDir(taskId), 'first-frame.jpg')
+}
+
 export function getSettingsPath(): string {
   return path.join(getDataDir(), 'settings.json')
 }

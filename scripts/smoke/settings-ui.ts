@@ -112,12 +112,30 @@ export async function verifySettingsUi(videoPath: string, check: Check): Promise
   try {
     await window.loadFile(path.join(process.cwd(), 'out/renderer/index.html'))
     await until(() => evaluate(`Boolean(document.querySelector('.settings-save-state'))`))
-    await evaluate(`localStorage.setItem('framelens.uploaded-files', ${JSON.stringify(JSON.stringify([{ path: videoPath, name: path.basename(videoPath) }]))})`)
+    const files = [
+      { path: videoPath, name: path.basename(videoPath) },
+      { path: path.join(path.dirname(videoPath), `${randomUUID()}.mp4`), name: '已移除的视频.mp4' }
+    ]
+    await evaluate(`localStorage.setItem('framelens.uploaded-files', ${JSON.stringify(JSON.stringify(files))})`)
     await window.loadFile(path.join(process.cwd(), 'out/renderer/index.html'))
-    await until(() => evaluate(`Boolean(document.querySelector('.uploaded-file-task-button'))`))
+    await until(() => evaluate(`document.querySelector('.uploaded-file-info .video-thumbnail img')?.naturalWidth > 0`))
+    check('工作台为已导入视频显示缩略图，源文件丢失时保留图标', await evaluate(`(() => {
+      const rows = document.querySelectorAll('.uploaded-file-row');
+      const image = rows[0]?.querySelector('.video-thumbnail img');
+      return rows.length === 2 && image?.naturalWidth === 256 && image.naturalHeight === 144 &&
+        Boolean(rows[1]?.querySelector('.video-thumbnail svg'));
+    })()`))
+    await evaluate(`document.querySelectorAll('.uploaded-file-delete-button')[1].click()`)
 
     await click('.nav-item', '物品识别记录')
-    await until(() => evaluate(`Boolean(document.querySelector('.history-row'))`))
+    await until(() => evaluate(`document.querySelector('.history-file .video-thumbnail img')?.naturalWidth > 0`))
+    check('物品识别记录显示已保存的首帧缩略图和纯白背景', await evaluate(`(() => {
+      const image = document.querySelector('.history-file .video-thumbnail img');
+      const style = getComputedStyle(image);
+      return image.src.startsWith('vr-media://task-thumbnails/') &&
+        image.naturalWidth === 256 && image.naturalHeight === 144 &&
+        style.backgroundColor === 'rgb(255, 255, 255)' && style.objectFit === 'contain';
+    })()`))
     await evaluate(`document.querySelector('.history-actions [aria-label="删除"]').click()`)
     check('删除任务弹窗使用共享三行布局', await hasConfirmationLayout('删除任务'))
     await click('.dialog-actions .button-ghost', '取消')
