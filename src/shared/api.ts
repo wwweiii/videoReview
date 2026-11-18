@@ -29,7 +29,7 @@ export interface FramelensApi {
   retryFailedFrames(taskId: string): Promise<TaskSummary>
   reanalyzeFrame(taskId: string, frameIndex: number): Promise<void>
   deleteTask(taskId: string): Promise<DeleteTaskResult>
-  exportTaskCsv(taskId: string): Promise<ExportResult>
+  exportTaskResults(taskId: string): Promise<ExportResult>
   saveSettings(input: SaveSettingsInput): Promise<PublicSettings>
   testModel(input: TestModelInput): Promise<ConnectionTestResult>
   listModelCallTraces(before?: string): Promise<ModelCallTracePage>

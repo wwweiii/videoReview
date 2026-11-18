@@ -1,11 +1,11 @@
 /**
  * 任务状态、判定结果与帧统计的共用展示/导出辅助。
  *
- * 主进程（CSV 导出）与渲染进程（徽章、筛选、统计）共用同一份中文文案，
+ * 主进程（导出）与渲染进程（徽章、筛选、统计）共用判定文案，
  * 避免两处各写一套导致不一致。
  */
 
-import type { AnalysisMode, FrameRecord, RegionStatus, TaskStatus, Verdict } from './types'
+import type { AnalysisMode, FrameRecord, TaskStatus, Verdict } from './types'
 
 /* ------------------------------ 发送方式 ------------------------------ */
 
@@ -66,8 +66,8 @@ export const VERDICT_TONES: Record<Verdict, string> = {
   failed: 'neutral'
 }
 
-/** CSV 导出用判定文案（失败帧写"识别失败"，比界面徽章更明确） */
-export const VERDICT_EXPORT_LABELS: Record<Verdict, string> = {
+/** 导出用判定文案（失败写"识别失败"，比界面徽章更明确） */
+const VERDICT_EXPORT_LABELS: Record<Verdict, string> = {
   pending: '待分析',
   normal: '正常',
   abnormal: '异常',
@@ -75,15 +75,8 @@ export const VERDICT_EXPORT_LABELS: Record<Verdict, string> = {
   failed: '识别失败'
 }
 
-/* ------------------------------ 定位状态 ------------------------------ */
-
-/** CSV 导出用定位状态文案 */
-export const REGION_STATUS_EXPORT_LABELS: Record<RegionStatus, string> = {
-  none: '未定位',
-  pending: '定位中',
-  ok: '已定位',
-  failed: '定位失败',
-  unsupported: '模型不支持定位'
+export function verdictExportText(verdict: Verdict): string {
+  return VERDICT_EXPORT_LABELS[verdict] ?? '待分析'
 }
 
 /* ------------------------------ 帧统计 ------------------------------ */

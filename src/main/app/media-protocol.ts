@@ -4,7 +4,7 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { Readable } from 'node:stream'
 import { logger } from '../logger'
-import { getFramesDir, getTaskThumbnailPath, getThumbsDir, isTaskId } from '../paths'
+import { getTaskThumbnailPath, getThumbsDir, isTaskId, resolveFrameImagePath } from '../paths'
 import { readTask } from '../task/store'
 
 /** 对已导入的行为任务提供流式读取，支持播放器 seek，不将整个视频读入内存。 */
@@ -79,22 +79,8 @@ export function registerMediaProtocol(): void {
       }
       const taskId = segments[0]
       const fileName = decodeURIComponent(segments[1])
-      if (!isTaskId(taskId)) {
-        return new Response('Not found', { status: 404 })
-      }
-      if (
-        !fileName ||
-        fileName.includes('/') ||
-        fileName.includes('\\') ||
-        fileName.includes('..') ||
-        !/\.(png|jpe?g)$/i.test(fileName)
-      ) {
-        return new Response('Not found', { status: 404 })
-      }
-
-      const framesDir = getFramesDir(taskId)
-      const sourcePath = path.resolve(framesDir, fileName)
-      if (!sourcePath.startsWith(path.resolve(framesDir) + path.sep) || !fs.existsSync(sourcePath)) {
+      const sourcePath = resolveFrameImagePath(taskId, fileName)
+      if (!sourcePath || !fs.existsSync(sourcePath)) {
         return new Response('Not found', { status: 404 })
       }
 

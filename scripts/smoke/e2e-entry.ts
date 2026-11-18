@@ -2,7 +2,7 @@
  * Electron 端到端冒烟（scripts/smoke/run-e2e.mjs 的入口）：
  * 真实 ffmpeg 抽帧 → 判定 → 定位 → task.json → 失败重试。
  */
-import { app, nativeImage, net } from 'electron'
+import { app, dialog, nativeImage, net } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
@@ -20,6 +20,7 @@ import {
   getFrameDiagnostics,
   getTaskView,
   deleteTask,
+  exportTaskResults,
   initializeTaskManager,
   listTasks,
   retryFailedFrames,
@@ -281,6 +282,23 @@ async function main(): Promise<void> {
     const behaviorHash = crypto.createHash('sha256').update(fs.readFileSync(behaviorFramePath)).digest('hex')
     const behaviorDiagnostic = await getFrameDiagnostics(behaviorTask.id, 0)
     check('行为模型请求直接使用按 75% 抽取的图片', behaviorDiagnostic.callTraces.some((trace) => trace.operation === '行为判定' && trace.requestBody.includes(`sha256=${behaviorHash}`)))
+    const behaviorCsv = path.join(getDataDir(), '行为导出.csv')
+    const showSaveDialog = dialog.showSaveDialog
+    try {
+      dialog.showSaveDialog = async (optionsOrWindow, options) => {
+        const picker = options ?? optionsOrWindow as Electron.SaveDialogOptions
+        check('行为导出保存对话框选用 CSV', picker.filters?.[0].extensions[0] === 'csv' &&
+          picker.defaultPath?.endsWith('_行为识别结果.csv') === true)
+        return { canceled: false, filePath: behaviorCsv }
+      }
+      await exportTaskResults(behaviorTask.id)
+    } finally {
+      dialog.showSaveDialog = showSaveDialog
+    }
+    const csv = fs.readFileSync(behaviorCsv, 'utf8')
+    check('行为导出保留 UTF-8 BOM、原表头和全部片段', csv.startsWith(
+      '\uFEFF"序号","开始时间","结束时间","判定","行为类别","行为说明","证据","置信度","采样帧数","错误"\r\n'
+    ) && csv.split('\r\n').length === behaviorTask.behaviorWindows!.length + 1)
 
     saveSettings({ ...settingsAfterUi, section: 'items', judgmentImage: { scalePercent: 100 } })
     const beforeRetry = await (await fetch(`http://127.0.0.1:${port}/health`)).json()

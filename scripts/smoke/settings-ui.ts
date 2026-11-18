@@ -1,11 +1,14 @@
 /** 隐藏 Electron 窗口，验证真实 React 表单、preload 和设置 IPC。 */
-import { BrowserWindow, ipcMain } from 'electron'
+import { BrowserWindow, dialog, ipcMain, nativeImage } from 'electron'
+import { Workbook } from 'exceljs'
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
+import type { RegionRecord } from '../../src/shared/types'
 import { getPublicSettings } from '../../src/main/config/settings'
 import { getResolvedModelConfig } from '../../src/main/config/model-config'
 import { registerIpcHandlers } from '../../src/main/ipc'
+import { getDataDir, getFramesDir } from '../../src/main/paths'
 import { getTask, listTasks } from '../../src/main/task/manager'
 import { emitFrame, emitSummary } from '../../src/main/task/event'
 import { flushSave } from '../../src/main/task/store'
@@ -147,6 +150,63 @@ export async function verifySettingsUi(videoPath: string, check: Check): Promise
     const retryTask = getTask(listTasks()[0].id)
     const failedJudgment = retryTask.frames.find(frame => frame.verdict === 'normal')!
     const failedRegion = retryTask.frames.find(frame => frame.regionStatus === 'ok' && frame.regions.length > 0)!
+    const exportPath = path.join(getDataDir(), '物品导出.xlsx')
+    const showSaveDialog = dialog.showSaveDialog
+    const savedRegions = failedRegion.regions
+    const savedDescription = failedRegion.description
+    const longDescription = '画面中发现两个已定位的异常对象，请核对框内物品和周边画面。'.repeat(12)
+    const exportRegions: RegionRecord[] = [
+      ...savedRegions,
+      { ...savedRegions[0], id: randomUUID(), box: [0.1, 0.2, 0.3, 0.4] }
+    ]
+    try {
+      failedRegion.regions = exportRegions
+      failedRegion.description = longDescription
+      dialog.showSaveDialog = async (_window, options) => {
+        check('物品导出保存对话框选用 XLSX', options?.filters?.[0].extensions[0] === 'xlsx' &&
+          options.defaultPath?.endsWith('_结果.xlsx') === true)
+        return { canceled: false, filePath: exportPath }
+      }
+      await click('.detail-actions button', '导出')
+      await until(() => fs.existsSync(exportPath))
+    } finally {
+      failedRegion.regions = savedRegions
+      failedRegion.description = savedDescription
+      dialog.showSaveDialog = showSaveDialog
+    }
+    const workbook = new Workbook()
+    await workbook.xlsx.readFile(exportPath)
+    const sheet = workbook.getWorksheet('物品识别结果')!
+    check('物品工作簿每帧一行，包含九个指定列', sheet.rowCount === retryTask.frames.length + 1 &&
+      JSON.stringify(sheet.getRow(1).values) === JSON.stringify([undefined, '序号', '时间', '判定',
+        '异常类型', '异常说明', '证据', '置信度', '预览', '异常定位']))
+    const longRow = sheet.getRow(retryTask.frames.indexOf(failedRegion) + 2)
+    const shortRow = sheet.getRow(retryTask.frames.indexOf(failedJudgment) + 2)
+    check('物品工作簿根据内容调整列宽与行高，保留完整长说明', sheet.getColumn(1).width! < sheet.getColumn(5).width! &&
+      longRow.height > shortRow.height && longRow.getCell(5).alignment.wrapText === true &&
+      longRow.getCell(5).value === longDescription)
+    const images = sheet.getImages()
+    const findImage = (frameIndex: number, columnIndex: number) => images.find(({ range }) =>
+      range.tl.nativeRow === retryTask.frames.findIndex(frame => frame.index === frameIndex) + 1 &&
+      range.tl.nativeCol === columnIndex)
+    check('每张预览图片原样嵌入对应的行', retryTask.frames.every(frame => {
+      const image = findImage(frame.index, 7)
+      const bytes = image && workbook.getImage(Number(image.imageId)).buffer
+      return bytes && fs.readFileSync(path.join(getFramesDir(retryTask.id), frame.fileName)).equals(Buffer.from(bytes))
+    }))
+    check('定位列只在有检测框的行嵌入标注图', retryTask.frames.every(frame =>
+      Boolean(findImage(frame.index, 8)) === (frame.regions.length > 0)))
+    const annotated = workbook.getImage(Number(findImage(failedRegion.index, 8)?.imageId))?.buffer
+    const image = annotated ? nativeImage.createFromBuffer(Buffer.from(annotated)) : nativeImage.createEmpty()
+    const { width, height } = image.getSize()
+    const pixels = image.toBitmap()
+    check('同一帧的多个检测框都画在标注图的对应位置', exportRegions.every(({ box: [x1, y1, x2] }) => {
+      const x = Math.floor((x1 + x2) * width / 2)
+      const y = Math.floor(y1 * height) + 2
+      const offset = (y * width + x) * 4
+      return pixels[offset + 2] - pixels[offset + 1] > 50 && pixels[offset + 2] - pixels[offset] > 50
+    }))
+
     const successfulFrames = () => JSON.stringify(retryTask.frames.filter(frame => frame !== failedJudgment && frame !== failedRegion))
     const successfulBefore = successfulFrames()
     const healthUrl = `${getResolvedModelConfig().baseUrl.replace(/\/v1\/?$/, '')}/health`

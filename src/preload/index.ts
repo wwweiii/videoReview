@@ -33,8 +33,8 @@ const api: FramelensApi = {
     ipcRenderer.invoke('task:reanalyzeFrame', taskId, index),
   deleteTask: (taskId: string): Promise<DeleteTaskResult> =>
     ipcRenderer.invoke('task:delete', taskId),
-  exportTaskCsv: (taskId: string): Promise<ExportResult> =>
-    ipcRenderer.invoke('task:exportCsv', taskId),
+  exportTaskResults: (taskId: string): Promise<ExportResult> =>
+    ipcRenderer.invoke('task:exportResults', taskId),
   saveSettings: (input: SaveSettingsInput): Promise<PublicSettings> =>
     ipcRenderer.invoke('settings:save', input),
   testModel: (input: TestModelInput): Promise<ConnectionTestResult> =>

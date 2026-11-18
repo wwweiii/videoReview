@@ -21,7 +21,7 @@ import {
 import { buildSummary } from './summary'
 import { runBehaviorTask } from './behavior'
 
-export { exportTaskCsv } from './export'
+export { exportTaskResults } from './export'
 
 let initialized = false
 

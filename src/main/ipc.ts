@@ -17,7 +17,7 @@ import { completeWindowClose } from './app/window'
 import {
   cancelActiveTask,
   deleteTask,
-  exportTaskCsv,
+  exportTaskResults,
   getTaskView,
   getFrameDiagnostics,
   listTasks,
@@ -74,9 +74,9 @@ export function registerIpcHandlers(): void {
     await deleteTask(taskId)
     return { deleted: true }
   })
-  ipcMain.handle('task:exportCsv', async (event, taskId: string) => {
+  ipcMain.handle('task:exportResults', async (event, taskId: string) => {
     const window = BrowserWindow.fromWebContents(event.sender) ?? undefined
-    return exportTaskCsv(taskId, window)
+    return exportTaskResults(taskId, window)
   })
 
   ipcMain.handle('settings:save', async (_event, input: SaveSettingsInput) => saveSettings(input))

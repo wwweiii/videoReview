@@ -81,6 +81,13 @@ export function getFramesDir(taskId: string): string {
   return path.join(getTaskDir(taskId), 'frames')
 }
 
+export function resolveFrameImagePath(taskId: string, fileName: string): string | null {
+  if (!isTaskId(taskId) || !fileName || /[/\\:\0]/.test(fileName) || fileName.includes('..') || !/\.(png|jpe?g)$/i.test(fileName)) {
+    return null
+  }
+  return path.join(getFramesDir(taskId), fileName)
+}
+
 export function getThumbsDir(taskId: string): string {
   return path.join(getTaskDir(taskId), 'thumbs')
 }

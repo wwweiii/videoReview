@@ -42,9 +42,8 @@ export function TaskDetailPage({
 }): JSX.Element {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null)
   const [confirmCancel, setConfirmCancel] = useState(false)
-  const [busyAction, setBusyAction] = useState<'cancel' | 'retry' | 'export' | null>(
-    null
-  )
+  const [busyAction, setBusyAction] = useState<'cancel' | 'retry' | null>(null)
+  const [exporting, setExporting] = useState(false)
   const [confirmReanalyzeIndex, setConfirmReanalyzeIndex] = useState<number | null>(null)
   const [submittedReanalyses, setSubmittedReanalyses] = useState<Set<number>>(() => new Set())
 
@@ -130,15 +129,15 @@ export function TaskDetailPage({
   }
 
   async function exportResult(): Promise<void> {
-    if (!task) return
-    setBusyAction('export')
+    if (!task || exporting) return
+    setExporting(true)
     try {
-      const result = await window.framelens.exportTaskCsv(task.id)
+      const result = await window.framelens.exportTaskResults(task.id)
       if (result.saved) showToast('success', '已导出')
     } catch (error) {
       showToast('error', friendlyError(error))
     } finally {
-      setBusyAction(null)
+      setExporting(false)
     }
   }
 
@@ -218,9 +217,9 @@ export function TaskDetailPage({
             type="button"
             className="button button-secondary"
             onClick={() => void exportResult()}
-            disabled={stats.total === 0 || busyAction === 'export'}
+            disabled={stats.total === 0 || exporting}
           >
-            {busyAction === 'export' ? (
+            {exporting ? (
               <Loader2 size={17} className="spin" />
             ) : (
               <Download size={17} />
