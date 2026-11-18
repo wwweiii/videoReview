@@ -99,6 +99,10 @@ input:focus-visible,
   padding: 48px 56px 64px;
 }
 
+.page:is(.history-page, .detail-page) {
+  padding-block: 24px;
+}
+
 .page-title {
   margin: 0;
   font-size: 32px;
@@ -112,6 +116,6 @@ input:focus-visible,
   align-items: center;
   justify-content: space-between;
   gap: 24px;
-  margin-bottom: 36px;
+  margin-bottom: 20px;
 }
 
