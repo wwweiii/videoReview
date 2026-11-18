@@ -164,7 +164,8 @@ export function TaskDetailPage({
   const canRetry = behavior
     ? stats.failed > 0 || Boolean(task.saveError) || stats.total === 0
     : task.frames.some((frame) => frame.status === 'failed' || frame.regionStatus === 'failed') ||
-      Boolean(task.saveError) || task.status === 'failed'
+      Boolean(task.saveError) || task.status === 'failed' ||
+      (task.frames.length === 0 && (task.status === 'cancelled' || task.status === 'interrupted'))
   const retryLabel = behavior ? '重试' : '失败重试'
 
   return (

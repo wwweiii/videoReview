@@ -1,5 +1,6 @@
 /** 隐藏 Electron 窗口，验证真实 React 表单、preload 和设置 IPC。 */
 import { BrowserWindow, ipcMain } from 'electron'
+import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { getPublicSettings } from '../../src/main/config/settings'
@@ -260,6 +261,23 @@ export async function verifySettingsUi(videoPath: string, check: Check): Promise
     check('判定和定位完成后自动移出分析中筛选', await evaluate(`
       !document.querySelector('.frame-row') && document.querySelector('.empty-result').textContent === '暂无结果'
     `))
+
+    for (const [status, label] of [['cancelled', '已取消'], ['interrupted', '已中断']] as const) {
+      const now = new Date().toISOString()
+      const task = {
+        ...retryTask, id: randomUUID(), name: `抽帧${label}`, frames: [], status,
+        progress: 0, phaseMessage: label, errorMessage: '', regionProfile: null, createdAt: now, updatedAt: now
+      }
+      await flushSave(task)
+      await click('.nav-item', '物品识别记录')
+      await until(() => evaluate(`[...document.querySelectorAll('.history-file-name')].some(el => el.textContent === ${JSON.stringify(task.name)})`))
+      await click('.history-file-name', task.name)
+      await until(() => evaluate(`document.querySelector('.detail-heading h1')?.textContent === ${JSON.stringify(task.name)}`))
+      await click('.detail-actions button', '失败重试')
+      await until(() => getTask(task.id).status === 'completed')
+      await until(() => evaluate(`Boolean(document.querySelector('.frame-row'))`))
+      check(`零帧任务${label}后可以点击失败重试并重新抽帧`, getTask(task.id).frames.length > 0)
+    }
 
     await click('.nav-item', '设置')
     check('物品页只显示启用项且不包含勾选框', await evaluate(`document.querySelectorAll('.detect-list .detect-item').length === ${getPublicSettings().prohibitedItems.length} && !document.querySelector('.detect-list [role="checkbox"], .detect-list input[type="checkbox"], .detect-list .check-box')`))
