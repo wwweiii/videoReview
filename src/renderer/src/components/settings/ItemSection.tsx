@@ -1,6 +1,5 @@
 import { Plus, X } from 'lucide-react'
 import type { JSX } from 'react'
-import { MAX_CUSTOM_ITEM_LABEL_LENGTH } from '@shared/defaults'
 import type { SettingsForm } from '../../hooks/useSettingsForm'
 
 /** 设置页「检测物品」：只显示已启用的物品，取消后移出列表，添加即启用。 */
@@ -26,22 +25,22 @@ export function ItemSection({ form }: { form: SettingsForm }): JSX.Element {
       </div>
       <div className="custom-item-row">
         <input
-          value={form.customItemLabel}
-          maxLength={MAX_CUSTOM_ITEM_LABEL_LENGTH}
-          placeholder="添加违禁物"
-          onChange={(event) => form.setCustomItemLabel(event.target.value)}
+          aria-label="添加检测物品"
+          value={form.customItemInput}
+          placeholder="输入物品名称"
+          onChange={(event) => form.setCustomItemInput(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === 'Enter') {
+            if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
               event.preventDefault()
-              form.addCustomItem()
+              form.addCustomItems()
             }
           }}
         />
         <button
           type="button"
           className="button button-secondary"
-          onClick={() => form.addCustomItem()}
-          disabled={!form.customItemLabel.trim()}
+          onClick={form.addCustomItems}
+          disabled={!form.customItemInput.trim()}
         >
           <Plus size={15} />
           添加

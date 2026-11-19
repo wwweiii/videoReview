@@ -1,5 +1,5 @@
 import type { BoxOrder, CoordinateSpace, ParseDialect } from './localization/profile'
-import type { AnalysisMode, BehaviorItem, CustomProhibitedItem, ModelMode, ProhibitedItem } from './types'
+import type { AnalysisMode, BehaviorItem, ModelMode } from './types'
 
 /**
  * 设置页初始默认值的统一入口，可直接在本文件调试。
@@ -65,36 +65,6 @@ export const DEFAULT_CONFIDENCE_THRESHOLD = 0.6
 export const DEFAULT_LOCALIZE = true
 /** 设置页「物品识别」→「图片缩放比例」：物品判定与定位共用，宽、高百分比为 1–100。 */
 export const DEFAULT_ITEM_IMAGE_SCALE_PERCENT = 100
-
-/**
- * 设置页「物品识别」→「检测物品」中的预设项，显示即启用，点击取消后移出列表。
- * label 为页面显示文字，也直接作为物品提示词；id 为内部标识。
- */
-export const BUILTIN_PROHIBITED_ITEMS: ProhibitedItem[] = [
-  { id: 'phone', label: '手机' },
-  { id: 'mineral_water', label: '矿泉水' },
-  { id: 'work_badge', label: '工作牌' },
-  { id: 'gel_pen', label: '中性笔' },
-  { id: 'pencil', label: '铅笔' },
-  { id: 'thermos', label: '保温杯' },
-  { id: 'notebook', label: '笔记本' },
-  { id: 'key', label: '钥匙' },
-  { id: 'clip', label: '夹子' },
-  { id: 'paper_clip', label: '回形针' },
-  { id: 'toothpick', label: '牙签' },
-  { id: 'staple', label: '订书针' },
-  { id: 'earphone', label: '耳机' },
-  { id: 'disposable_chopsticks', label: '一次性筷子' },
-  { id: 'stainless_steel_tool', label: '不锈钢工具' },
-  { id: 'watch', label: '手表' },
-  { id: 'data_cable', label: '数据线' },
-  { id: 'air_conditioner_remote', label: '空调遥控器' }
-].map((item) => ({ ...item, prompt: item.label, aliases: [item.id] }))
-/** 设置页「物品识别」→「检测物品」：初始显示并启用的预设项 id，取消后可输入名称重新添加。 */
-export const DEFAULT_PROHIBITED_ITEMS = BUILTIN_PROHIBITED_ITEMS.map((item) => item.id)
-
-/** 设置页「物品识别」→「检测物品」中的初始自定义项，全部显示并启用：例如 [{ id: 'custom:camera', label: '相机' }]。 */
-export const DEFAULT_CUSTOM_PROHIBITED_ITEMS: CustomProhibitedItem[] = []
 
 // 行为识别
 /** 设置页「行为识别」→「识别行为」：例如 [{ id: 'behavior:sign', label: '手写签字' }]，label 为显示文字。 */

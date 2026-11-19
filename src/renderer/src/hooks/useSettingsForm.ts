@@ -1,9 +1,8 @@
 import { useState } from 'react'
 import { normalizeImageScalePercent, normalizeJudgmentImage } from '@shared/image'
 import { normalizeInterval } from '@shared/format'
-import { MAX_CUSTOM_ITEM_LABEL_LENGTH, MAX_CUSTOM_PROHIBITED_ITEMS } from '@shared/defaults'
-import { BUILTIN_PROHIBITED_ITEMS, labelMatchesItem, normalizeCustomItems, normalizeSelectedItems, resolveProhibitedItems } from '@shared/items'
-import { MAX_BEHAVIOR_ITEMS, MAX_BEHAVIOR_LABEL_LENGTH } from '@shared/defaults'
+import { MAX_BEHAVIOR_ITEMS, MAX_BEHAVIOR_LABEL_LENGTH, MAX_CUSTOM_ITEM_LABEL_LENGTH, MAX_CUSTOM_PROHIBITED_ITEMS } from '@shared/defaults'
+import { normalizeCustomItems, normalizeItemLabelText } from '@shared/items'
 import { normalizeBehaviorItems, normalizeBehaviorSampling } from '@shared/behavior'
 import type { BoxOrder, CoordinateSpace } from '@shared/localization'
 import type {
@@ -50,11 +49,14 @@ export function useSettingsForm({
   const [analysisMode, setAnalysisMode] = useState<AnalysisMode>(settings.analysisMode)
   const [groupSize, setGroupSize] = useState(settings.groupSize)
   const [localize, setLocalize] = useState(settings.localize)
-  const [items, setItems] = useState<string[]>(settings.prohibitedItems)
-  const [customItems, setCustomItems] = useState<CustomProhibitedItem[]>(
-    settings.customProhibitedItems.filter((item) => settings.prohibitedItems.includes(item.id))
-  )
-  const [customItemLabel, setCustomItemLabel] = useState('')
+  const [customItems, setCustomItems] = useState<CustomProhibitedItem[]>(() => {
+    const byId = new Map(settings.customProhibitedItems.map((item) => [item.id, item]))
+    return settings.prohibitedItems.flatMap((id) => {
+      const item = byId.get(id)
+      return item ? [item] : []
+    })
+  })
+  const [customItemInput, setCustomItemInput] = useState('')
   const [behaviorItems, setBehaviorItems] = useState<BehaviorItem[]>(settings.behaviorItems)
   const [behaviorLabel, setBehaviorLabel] = useState('')
   const [behaviorWindowSec, setBehaviorWindowSec] = useState(settings.behaviorWindowSec)
@@ -71,44 +73,35 @@ export function useSettingsForm({
       return false
     }
   })()
-  const activeItems = resolveProhibitedItems(items, customItems)
-
-  function addCustomItem(): void {
-    const label = customItemLabel.trim()
-    if (!label) return
-    if (label.length > MAX_CUSTOM_ITEM_LABEL_LENGTH) {
-      showToast('error', `物品名称不能超过 ${MAX_CUSTOM_ITEM_LABEL_LENGTH} 个字`)
+  function addCustomItems(): void {
+    const labels = customItemInput.split(/[、，]/).map((label) => label.trim()).filter(Boolean)
+    if (labels.length === 0) return
+    if (labels.some((label) => label.length > MAX_CUSTOM_ITEM_LABEL_LENGTH)) {
+      showToast('error', `每个物品名称不能超过 ${MAX_CUSTOM_ITEM_LABEL_LENGTH} 个字`)
       return
     }
-    const builtin = BUILTIN_PROHIBITED_ITEMS.find((item) => labelMatchesItem(label, item))
-    if (builtin) {
-      if (items.includes(builtin.id)) {
-        showToast('error', '该物品已存在')
-        return
-      }
-      setItems((previous) => [...previous, builtin.id])
-      setCustomItemLabel('')
+    const seenLabels = new Set(customItems.map((item) => normalizeItemLabelText(item.label)))
+    const additions: { label: string }[] = []
+    for (const label of labels) {
+      const normalized = normalizeItemLabelText(label)
+      if (seenLabels.has(normalized)) continue
+      seenLabels.add(normalized)
+      additions.push({ label })
+    }
+    if (additions.length === 0) {
+      showToast('error', '输入的物品已存在')
       return
     }
-    if (customItems.length >= MAX_CUSTOM_PROHIBITED_ITEMS) {
-      showToast('error', `最多添加 ${MAX_CUSTOM_PROHIBITED_ITEMS} 个自定义物品`)
+    if (customItems.length + additions.length > MAX_CUSTOM_PROHIBITED_ITEMS) {
+      showToast('error', `最多添加 ${MAX_CUSTOM_PROHIBITED_ITEMS} 个检测物品`)
       return
     }
-    const normalized = normalizeCustomItems([...customItems, { id: '', label }])
-    if (normalized.length <= customItems.length) {
-      setCustomItemLabel('')
-      showToast('error', '该物品已存在')
-      return
-    }
-    const added = normalized[normalized.length - 1]
-    setCustomItems(normalized)
-    setItems((previous) => [...previous, added.id])
-    setCustomItemLabel('')
+    setCustomItems(normalizeCustomItems([...customItems, ...additions]))
+    setCustomItemInput('')
   }
 
   function removeItem(itemId: string): void {
     setCustomItems((previous) => previous.filter((item) => item.id !== itemId))
-    setItems((previous) => previous.filter((id) => id !== itemId))
   }
 
   function addBehaviorItem(): void {
@@ -179,7 +172,7 @@ export function useSettingsForm({
       developerMode,
       traceEnabled,
       intervalSec: normalizeInterval(intervalSec),
-      prohibitedItems: normalizeSelectedItems(items, customItems),
+      prohibitedItems: customItems.map((item) => item.id),
       customProhibitedItems: customItems,
       behaviorItems,
       analysisMode,
@@ -221,9 +214,9 @@ export function useSettingsForm({
     setGroupSize,
     localize,
     setLocalize,
-    activeItems,
-    customItemLabel,
-    setCustomItemLabel,
+    activeItems: customItems,
+    customItemInput,
+    setCustomItemInput,
     behaviorItems,
     behaviorLabel,
     setBehaviorLabel,
@@ -238,7 +231,7 @@ export function useSettingsForm({
     addBehaviorItem,
     removeBehaviorItem,
     customValid,
-    addCustomItem,
+    addCustomItems,
     removeItem,
     buildCustomModel,
     validateExtraBody,

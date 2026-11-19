@@ -125,8 +125,12 @@ function writeSettings(port: number): void {
       parseDialectOverride: 'auto'
     },
     intervalSec: 1,
-    prohibitedItems: ['phone', 'pencil', 'custom:testpower'],
-    customProhibitedItems: [{ id: 'custom:testpower', label: '充电宝' }],
+    prohibitedItems: ['phone', 'pencil', 'custom:phone', 'custom:pencil', 'custom:testpower'],
+    customProhibitedItems: [
+      { id: 'custom:phone', label: '手机' },
+      { id: 'custom:pencil', label: '铅笔' },
+      { id: 'custom:testpower', label: '充电宝' }
+    ],
     analysisMode: 'single',
     groupSize: 4,
     confidenceThreshold: 0.6,
@@ -169,13 +173,13 @@ async function main(): Promise<void> {
     const sample = located[0]
     check('定位框数量>=1', (sample?.regions.length ?? 0) >= 1, sample?.regions.length)
     check(
-      '类别映射到内置物品',
-      sample?.regions.some((item) => item.itemId === 'phone') === true,
+      '类别映射到自定义物品',
+      sample?.regions.some((item) => item.itemId === 'custom:phone') === true,
       sample?.regions.map((item) => `${item.category}/${item.itemId}`)
     )
     check(
-      '任务配置仅包含勾选的预设和自定义物品',
-      JSON.stringify(task.config.prohibitedItems) === JSON.stringify(['phone', 'pencil', 'custom:testpower']),
+      '任务配置仅包含已启用的自定义物品',
+      JSON.stringify(task.config.prohibitedItems) === JSON.stringify(['custom:phone', 'custom:pencil', 'custom:testpower']),
       task.config.prohibitedItems
     )
     check(

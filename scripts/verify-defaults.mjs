@@ -72,12 +72,8 @@ try {
   assert.equal(initialSettings.behaviorImageScalePercent, initial.defaults.DEFAULT_BEHAVIOR_IMAGE_SCALE_PERCENT)
   assert.equal(initialSettings.behaviorFps, initial.defaults.DEFAULT_BEHAVIOR_FPS)
   assert.deepEqual(initialSettings.behaviorItems, initial.defaults.DEFAULT_BEHAVIOR_ITEMS)
-  assert.deepEqual(initialSettings.prohibitedItems, initial.defaults.DEFAULT_PROHIBITED_ITEMS)
-  assert.deepEqual(initial.defaults.BUILTIN_PROHIBITED_ITEMS.map((item) => item.label), [
-    '手机', '矿泉水', '工作牌', '中性笔', '铅笔', '保温杯', '笔记本', '钥匙', '夹子',
-    '回形针', '牙签', '订书针', '耳机', '一次性筷子', '不锈钢工具', '手表', '数据线', '空调遥控器'
-  ])
-  assert.ok(initial.defaults.BUILTIN_PROHIBITED_ITEMS.every((item) => item.prompt === item.label))
+  assert.deepEqual(initialSettings.prohibitedItems, [])
+  assert.deepEqual(initialSettings.customProhibitedItems, [])
 
   const overrides = {
     DEFAULT_MODEL_MODE: 'custom', DEFAULT_CONCURRENCY: 5, DEFAULT_DEVELOPER_MODE: true,
@@ -85,7 +81,6 @@ try {
     DEFAULT_MODEL_RUNTIME: { extraBody: '{"top_k":7}', coordinateSpaceOverride: 'absolute_px', boxOrderOverride: 'yxyx', parseDialectOverride: 'json_multi' },
     DEFAULT_INTERVAL_SEC: 3, DEFAULT_ANALYSIS_MODE: 'group', DEFAULT_GROUP_SIZE: 6,
     DEFAULT_CONFIDENCE_THRESHOLD: 0, DEFAULT_LOCALIZE: false, DEFAULT_ITEM_IMAGE_SCALE_PERCENT: 75,
-    DEFAULT_CUSTOM_PROHIBITED_ITEMS: [{ id: 'custom:camera', label: '相机' }, { id: 'custom:tablet', label: '平板' }],
     DEFAULT_BEHAVIOR_ITEMS: [{ id: 'behavior:sign', label: '手写签字' }],
     DEFAULT_BEHAVIOR_WINDOW_SEC: 3, DEFAULT_BEHAVIOR_STRIDE_SEC: 1.5, DEFAULT_BEHAVIOR_FPS: 8,
     DEFAULT_BEHAVIOR_IMAGE_SCALE_PERCENT: 50
@@ -109,16 +104,14 @@ try {
   assert.equal(changedSettings.intervalSec, 3)
   assert.equal(changedSettings.analysisMode, 'group')
   assert.equal(changedSettings.groupSize, 6)
-  assert.deepEqual(changedSettings.prohibitedItems, [...changed.defaults.DEFAULT_PROHIBITED_ITEMS, 'custom:camera', 'custom:tablet'])
+  assert.deepEqual(changedSettings.prohibitedItems, [])
   assert.deepEqual(changed.getBehaviorConfig(), { windowSec: 3, strideSec: 1.5, fps: 8, imageScalePercent: 50, behaviors: ['手写签字'] })
-  changedSettings.customProhibitedItems[0].label = '修改草稿'
   changedSettings.behaviorItems[0].label = '修改草稿'
-  assert.equal(changed.defaults.DEFAULT_CUSTOM_PROHIBITED_ITEMS[0].label, '相机')
   assert.equal(changed.defaults.DEFAULT_BEHAVIOR_ITEMS[0].label, '手写签字')
 
   const legacy = await scenario({ overrides, saved: {} })
   assert.deepEqual(plain(legacy.loadSettings()), plain({ ...changed.loadSettings(),
-    customProhibitedItems: overrides.DEFAULT_CUSTOM_PROHIBITED_ITEMS, behaviorItems: overrides.DEFAULT_BEHAVIOR_ITEMS
+    behaviorItems: overrides.DEFAULT_BEHAVIOR_ITEMS
   }))
 
   const saved = { ...initialSettings,
@@ -134,17 +127,20 @@ try {
   assert.equal(legacyTrace.getPublicSettings().developerMode, true)
   assert.equal(legacyTrace.getPublicSettings().traceEnabled, false, '旧设置未主动启用轨迹')
 
-  const unselected = await scenario({ saved: { ...saved, prohibitedItems: [] } })
-  assert.deepEqual(unselected.getPublicSettings().prohibitedItems, [], '取消全部物品后重新加载不得补回预设项')
-  unselected.saveSettings({ ...unselected.getPublicSettings(), section: 'items', customModel: { baseUrl: '', model: '' }, prohibitedItems: ['pencil'] })
-  assert.deepEqual(unselected.getAnalysisConfig().prohibitedItems, ['pencil'], '只选择一项时任务快照只包含该项')
-  unselected.saveSettings({ ...unselected.getPublicSettings(), section: 'items', customModel: { baseUrl: '', model: '' }, prohibitedItems: [] })
-  assert.deepEqual(unselected.getAnalysisConfig().prohibitedItems, [], '保存空列表不得重新加入预设项')
-  const oldSelection = await scenario({ saved: { ...saved, prohibitedItems: ['pen', 'cup', 'kettle', 'phone'] } })
-  assert.deepEqual(oldSelection.getPublicSettings().prohibitedItems, ['phone'], '旧配置仅保留新清单中仍存在的选择')
+  const customProhibitedItems = [{ id: 'custom:power', label: '充电宝' }]
+  const oldSelection = await scenario({
+    saved: { ...saved, prohibitedItems: ['pen', 'phone', 'pencil', 'custom:power'], customProhibitedItems }
+  })
+  assert.deepEqual(oldSelection.getPublicSettings().prohibitedItems, ['custom:power'], '旧配置移除预设物品并保留启用的自定义物品')
+  assert.deepEqual(oldSelection.getAnalysisConfig().customProhibitedItems, customProhibitedItems)
+  oldSelection.saveSettings({
+    ...oldSelection.getPublicSettings(), section: 'items', customModel: { baseUrl: '', model: '' },
+    prohibitedItems: [], customProhibitedItems: []
+  })
+  assert.deepEqual(oldSelection.getAnalysisConfig().prohibitedItems, [], '保存空列表后仍为空')
 
   const preset = { baseUrl: 'http://127.0.0.1:5555/v1', model: 'preset', apiKey: '', concurrency: 7, timeoutSec: 80,
-    defaults: { intervalSec: 5, analysisMode: 'single', groupSize: 3, localize: true, itemImageScalePercent: 60, behaviorImageScalePercent: 40 }
+    defaults: { intervalSec: 5, prohibitedItems: ['phone'], analysisMode: 'single', groupSize: 3, localize: true, itemImageScalePercent: 60, behaviorImageScalePercent: 40 }
   }
   const withPreset = await scenario({ overrides: { ...overrides, DEFAULT_MODEL_MODE: 'auto' }, preset })
   assert.equal(withPreset.loadSettings().modelMode, 'preset')
@@ -153,6 +149,7 @@ try {
   assert.equal(withPreset.loadSettings().analysisMode, 'single')
   assert.equal(withPreset.loadSettings().judgmentImage.scalePercent, 60)
   assert.equal(withPreset.loadSettings().behaviorImageScalePercent, 40)
+  assert.deepEqual(withPreset.loadSettings().prohibitedItems, [])
   const customWithPreset = await scenario({ overrides, preset })
   assert.equal(customWithPreset.loadSettings().modelMode, 'custom')
   const unavailable = await scenario({ overrides: { DEFAULT_MODEL_MODE: 'preset' } })

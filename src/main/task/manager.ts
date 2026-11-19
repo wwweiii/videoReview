@@ -123,7 +123,7 @@ async function startTask(filePath: string, kind: TaskKind): Promise<TaskSummary>
   const modelConfig = getResolvedModelConfig()
   const config = getAnalysisConfig()
   const behaviorConfig = kind === 'behavior' ? getBehaviorConfig() : undefined
-  if (kind === 'items' && config.prohibitedItems.length === 0) throw new Error('请先在设置中选择检测物品')
+  if (kind === 'items' && config.prohibitedItems.length === 0) throw new Error('请先在设置中添加至少一个检测物品')
   if (kind === 'behavior' && !behaviorConfig?.behaviors.length) throw new Error('请先在设置中添加至少一个识别行为')
   const source = await probeVideo(filePath)
   assertAcceptingTasks()

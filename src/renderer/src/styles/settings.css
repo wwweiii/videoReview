@@ -230,7 +230,7 @@ input:focus {
 
 .detect-list {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  grid-template-columns: repeat(auto-fill, 160px);
   gap: 10px;
 }
 
@@ -320,12 +320,13 @@ input:focus {
 .settings-save-state {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 2px;
   color: #64748b;
   font-size: 13px;
 }
 
 .settings-save-state[data-status='error'] {
+  gap: 10px;
   color: #b42318;
 }
 

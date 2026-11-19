@@ -98,7 +98,7 @@ export type LocatedBy = 'vlm' | 'detector' | 'grid' | 'region_text' | 'manual'
 
 export interface RegionRecord {
   id: string
-  /** 对应 BUILTIN_PROHIBITED_ITEMS 的 id；模型类别对不上时为 null */
+  /** 对应任务配置中的检测物品 id，模型类别对不上时为 null。 */
   itemId: string | null
   /** 展示用类别（优先使用内置中文名，否则保留模型原始 label） */
   category: string

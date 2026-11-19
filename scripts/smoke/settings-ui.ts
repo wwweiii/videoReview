@@ -4,8 +4,8 @@ import { Workbook } from 'exceljs'
 import { randomUUID } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
-import type { RegionRecord } from '../../src/shared/types'
-import { getPublicSettings } from '../../src/main/config/settings'
+import type { RegionRecord, SaveSettingsInput } from '../../src/shared/types'
+import { getPublicSettings, saveSettings } from '../../src/main/config/settings'
 import { getResolvedModelConfig } from '../../src/main/config/model-config'
 import { registerIpcHandlers } from '../../src/main/ipc'
 import { getDataDir, getFramesDir } from '../../src/main/paths'
@@ -30,10 +30,11 @@ export async function verifySettingsUi(videoPath: string, check: Check): Promise
     }
   })
   const evaluate = (source: string): Promise<any> => window.webContents.executeJavaScript(source)
-  async function until(condition: () => boolean | Promise<boolean>): Promise<void> {
+  const getSaveStatus = (): Promise<string> => evaluate(`document.querySelector('.settings-save-state').dataset.status`)
+  async function until(condition: () => boolean | Promise<boolean>, timeoutMs = 10_000): Promise<void> {
     const started = Date.now()
     while (!await condition()) {
-      if (Date.now() - started > 10_000) throw new Error('等待界面条件超时')
+      if (Date.now() - started > timeoutMs) throw new Error('等待界面条件超时')
       await new Promise((resolve) => setTimeout(resolve, 20))
     }
   }
@@ -74,6 +75,13 @@ export async function verifySettingsUi(videoPath: string, check: Check): Promise
       input.dispatchEvent(new Event('input', { bubbles: true }));
     })()`)
     await until(() => evaluate(`document.querySelector('.settings-save-state')?.dataset.status === 'pending'`))
+  }
+  async function editItemInput(value: string): Promise<void> {
+    await evaluate(`(() => {
+      const input = document.querySelector('.custom-item-row input');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(value)});
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    })()`)
   }
   async function captureSettings(name: string): Promise<void> {
     await evaluate(`document.querySelector('.toast-close')?.click()`)
@@ -359,11 +367,6 @@ export async function verifySettingsUi(videoPath: string, check: Check): Promise
 
     await click('.nav-item', '设置')
     check('物品页只显示启用项且不包含勾选框', await evaluate(`document.querySelectorAll('.detect-list .detect-item').length === ${getPublicSettings().prohibitedItems.length} && !document.querySelector('.detect-list [role="checkbox"], .detect-list input[type="checkbox"], .detect-list .check-box')`))
-    check('物品输入框显示简化文案', await evaluate(`document.querySelector('.custom-item-row input').placeholder === '添加违禁物'`))
-    const activeLabels: string[] = await evaluate(`[...document.querySelectorAll('.detect-item-label')].map(el => el.textContent.trim())`)
-    await evaluate(`document.querySelector('[aria-label="取消物品 铅笔"]').click()`)
-    await requestClose()
-    check('取消预设物品后从界面和保存配置中同时移除', !getPublicSettings().prohibitedItems.includes('pencil') && await evaluate(`![...document.querySelectorAll('.detect-item-label')].some(el => el.textContent === '铅笔')`))
     await evaluate(`document.querySelectorAll('.detect-list .detect-remove').forEach(el => el.click())`)
     await requestClose()
     check('界面支持取消全部物品并保存空列表', getPublicSettings().prohibitedItems.length === 0)
@@ -371,37 +374,72 @@ export async function verifySettingsUi(videoPath: string, check: Check): Promise
     await until(() => evaluate(`Boolean(document.querySelector('.settings-save-state'))`))
     await click('.nav-item', '设置')
     check('重新加载页面仍保留空物品列表', await evaluate(`document.querySelectorAll('.detect-item').length === 0`))
-    for (const label of activeLabels) {
-      await evaluate(`(() => {
-        const input = document.querySelector('.custom-item-row input');
-        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(label)});
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-      })()`)
-      await click('.custom-item-row button', '添加')
-    }
+    check('打开设置时没有保存提示', await getSaveStatus() === 'idle')
+    await editItemInput('相机、1234567890123')
+    await click('.custom-item-row button', '添加')
+    check('批量添加按单个名称校验长度', await evaluate(`!document.querySelector('.detect-item') && document.querySelector('.custom-item-row input').value === '相机、1234567890123'`))
+    await editItemInput(' 手机 、 铅笔， 、 充电宝 ，手机 ')
+    await click('.custom-item-row button', '添加')
     await requestClose()
-    check('重新添加预设与自定义物品后立即显示并启用', getPublicSettings().prohibitedItems.includes('pencil') && getPublicSettings().customProhibitedItems.some(item => item.label === '充电宝') && await evaluate(`document.querySelectorAll('.detect-item').length === ${activeLabels.length}`))
+    const expectedLabels = JSON.stringify(['手机', '铅笔', '充电宝'])
+    const savedItems = getPublicSettings()
+    check('混用顿号和逗号可批量添加，忽略空项和重复名称',
+      JSON.stringify(savedItems.customProhibitedItems.map((item) => item.label)) === expectedLabels &&
+      savedItems.prohibitedItems.length === 3 &&
+      await evaluate(`JSON.stringify([...document.querySelectorAll('.detect-item-label')].map(el => el.textContent)) === ${JSON.stringify(expectedLabels)}`))
     await evaluate(`document.querySelector('[aria-label="取消物品 充电宝"]').click()`)
     await requestClose()
     check('取消自定义物品后移除配置记录', !getPublicSettings().customProhibitedItems.some(item => item.label === '充电宝'))
-    await evaluate(`(() => {
-      const input = document.querySelector('.custom-item-row input');
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '充电宝');
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-    })()`)
-    await click('.custom-item-row button', '添加')
+    await editItemInput('手机，充电宝')
+    await evaluate(`document.querySelector('.custom-item-row input').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))`)
     await requestClose()
+    check('回车提交批量输入时跳过已有物品', JSON.stringify(getPublicSettings().customProhibitedItems.map((item) => item.label)) === expectedLabels)
+    const showsSavingIndicator = (): Promise<boolean> => evaluate(`(() => {
+      const status = document.querySelector('.settings-save-state');
+      const spinner = status.querySelector('svg.spin');
+      return Boolean(spinner && getComputedStyle(spinner).animationName === 'spin' && status.textContent === '保存中');
+    })()`)
     await editInterval(3.5)
+    check('修改设置后立即显示转圈图标和保存中文案', await getSaveStatus() === 'pending' && await showsSavingIndicator())
     await click('.nav-item', '工作台')
-    await until(() => getPublicSettings().intervalSec === 3.5)
+    await until(async () => getPublicSettings().intervalSec === 3.5 && await getSaveStatus() === 'idle')
     check('界面切到工作台后仍完成自动保存', getPublicSettings().intervalSec === 3.5)
     check('切页后设置界面保持隐藏', await evaluate(`document.querySelector('.settings-page').getClientRects().length === 0`))
 
     await click('.nav-item', '设置')
-    await editInterval(4.5)
-    check('关闭请求等待防抖中的设置保存', await requestClose() && getPublicSettings().intervalSec === 4.5)
-    await until(() => evaluate(`document.querySelector('.settings-save-state')?.dataset.status === 'saved'`))
-    check('保存成功后界面显示已保存', true)
+    check('在后台完成的保存不会在返回设置时显示提示', await getSaveStatus() === 'idle')
+    const saveGate = Promise.withResolvers<void>()
+    ipcMain.removeHandler('settings:save')
+    ipcMain.handle('settings:save', async (_event, input: SaveSettingsInput) => {
+      await saveGate.promise
+      return saveSettings(input)
+    })
+    try {
+      await editInterval(4.5)
+      const [closed, savingIndicator] = await Promise.all([
+        requestClose(),
+        (async () => {
+          try {
+            await until(async () => await getSaveStatus() === 'saving')
+            return await showsSavingIndicator()
+          } finally {
+            saveGate.resolve()
+          }
+        })()
+      ])
+      check('保存中显示转圈图标和文案', savingIndicator)
+      check('关闭请求等待防抖中的设置保存', closed && getPublicSettings().intervalSec === 4.5)
+    } finally {
+      saveGate.resolve()
+      ipcMain.removeHandler('settings:save')
+      ipcMain.handle('settings:save', async (_event, input: SaveSettingsInput) => saveSettings(input))
+    }
+    await until(async () => await getSaveStatus() === 'saved')
+    const successShownAt = Date.now()
+    check('保存完成后显示「已保存」', await evaluate(`document.querySelector('.settings-save-state').textContent === '已保存'`))
+    await until(async () => await getSaveStatus() === 'idle', 2600)
+    check('「已保存」约两秒后消失', Date.now() - successShownAt >= 1750)
+    check('没有待保存修改时不会再次显示成功提示', await requestClose() && await getSaveStatus() === 'idle')
 
     const rename = fs.renameSync
     try {
@@ -414,8 +452,11 @@ export async function verifySettingsUi(videoPath: string, check: Check): Promise
       fs.renameSync = rename
     }
     await click('.settings-save-state button', '重试保存')
-    await until(() => getPublicSettings().intervalSec === 5.5)
+    await until(async () => await getSaveStatus() === 'saved')
     check('恢复写入后原草稿可重试保存', getPublicSettings().intervalSec === 5.5)
+    await click('.settings-nav-item', '行为识别')
+    await click('.settings-nav-item', '物品识别')
+    check('切换页面后再返回不恢复之前的「已保存」提示', await getSaveStatus() === 'idle')
 
     await click('.settings-nav-item', '模型配置')
     const advancedSelector = '.settings-disclosure'

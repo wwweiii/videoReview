@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { DEFAULT_PROHIBITED_ITEMS } from '@shared/items'
+import { LEGACY_DEFAULT_ITEM_IDS } from '@shared/items'
 import type { FrameRecord, TaskRecord, TaskSummary } from '@shared/types'
 import { isTaskActive } from '@shared/task'
 import { logger } from '../logger'
@@ -85,7 +85,7 @@ function normalizeTask(raw: TaskRecord): TaskRecord {
       prohibitedItems:
         Array.isArray(rawConfig.prohibitedItems)
           ? rawConfig.prohibitedItems
-          : [...DEFAULT_PROHIBITED_ITEMS],
+          : [...LEGACY_DEFAULT_ITEM_IDS],
       customProhibitedItems: Array.isArray(rawConfig.customProhibitedItems)
         ? rawConfig.customProhibitedItems
         : [],

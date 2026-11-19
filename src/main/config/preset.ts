@@ -13,7 +13,6 @@ export interface PresetDefaults {
   itemImageScalePercent?: number
   behaviorImageScalePercent?: number
   intervalSec?: number
-  prohibitedItems?: string[]
   analysisMode?: 'single' | 'group'
   groupSize?: number
   confidenceThreshold?: number
@@ -67,11 +66,6 @@ function decodePreset(): PresetModelConfig | null {
     if (Number.isFinite(Number(rawDefaults.itemImageScalePercent))) defaults.itemImageScalePercent = Number(rawDefaults.itemImageScalePercent)
     if (Number.isFinite(Number(rawDefaults.behaviorImageScalePercent))) defaults.behaviorImageScalePercent = Number(rawDefaults.behaviorImageScalePercent)
     if (Number.isFinite(Number(rawDefaults.intervalSec))) defaults.intervalSec = Number(rawDefaults.intervalSec)
-    if (Array.isArray(rawDefaults.prohibitedItems)) {
-      defaults.prohibitedItems = rawDefaults.prohibitedItems.filter(
-        (id): id is string => typeof id === 'string'
-      )
-    }
     if (rawDefaults.analysisMode === 'single' || rawDefaults.analysisMode === 'group') {
       defaults.analysisMode = rawDefaults.analysisMode
     }

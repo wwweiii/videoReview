@@ -17,7 +17,7 @@ $env:PRESET_API_KEY = "your-key"
 npm run encrypt-preset
 ```
 
-生成结果：`resources/config/preset.enc`。可选的默认分析参数（如 `PRESET_ITEMS`、`PRESET_INTERVAL_SEC`、`PRESET_LOCALIZE` 等）见根 [README.md](../../README.md) 的「加密预设」一节，以及 `scripts/encrypt-preset.mjs` 顶部打印的用法。
+生成结果为 `resources/config/preset.enc`。可选的默认分析参数包括 `PRESET_INTERVAL_SEC` 和 `PRESET_LOCALIZE`，完整用法见「加密预设」一节及 `scripts/encrypt-preset.mjs` 打印的说明。[项目 README](../../README.md)
 
 ## 注意
 

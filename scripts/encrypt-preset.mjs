@@ -12,7 +12,6 @@ const concurrency = Number(process.env.PRESET_CONCURRENCY || 2)
 const timeoutSec = Number(process.env.PRESET_TIMEOUT_SEC || 120)
 const extraHeaders = process.env.PRESET_EXTRA_HEADERS || ''
 const intervalSec = process.env.PRESET_INTERVAL_SEC
-const items = process.env.PRESET_ITEMS
 const analysisMode = process.env.PRESET_MODE
 const groupSize = process.env.PRESET_GROUP_SIZE
 const confidenceThreshold = process.env.PRESET_THRESHOLD
@@ -32,7 +31,7 @@ if (!baseUrl || !model) {
       '',
       'Optional:',
       '  PRESET_API_KEY, PRESET_CONCURRENCY, PRESET_TIMEOUT_SEC, PRESET_EXTRA_HEADERS',
-      '  PRESET_INTERVAL_SEC, PRESET_ITEMS (逗号分隔), PRESET_MODE (single/group),',
+      '  PRESET_INTERVAL_SEC, PRESET_MODE (single/group),',
       '  PRESET_GROUP_SIZE, PRESET_THRESHOLD',
       '',
       '定位标记相关:',
@@ -92,7 +91,6 @@ const defaults = {}
 if (Number.isFinite(Number(itemImageScalePercent))) defaults.itemImageScalePercent = Number(itemImageScalePercent)
 if (Number.isFinite(Number(behaviorImageScalePercent))) defaults.behaviorImageScalePercent = Number(behaviorImageScalePercent)
 if (Number.isFinite(Number(intervalSec))) defaults.intervalSec = Number(intervalSec)
-if (items && items.trim()) defaults.prohibitedItems = items.split(',').map((id) => id.trim()).filter(Boolean)
 if (analysisMode === 'single' || analysisMode === 'group') defaults.analysisMode = analysisMode
 if (Number.isFinite(Number(groupSize))) defaults.groupSize = Number(groupSize)
 if (Number.isFinite(Number(confidenceThreshold))) defaults.confidenceThreshold = Number(confidenceThreshold)

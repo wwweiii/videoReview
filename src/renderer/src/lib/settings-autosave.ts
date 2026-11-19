@@ -1,7 +1,9 @@
 import type { PublicSettings, SaveSettingsInput } from '@shared/types'
 
 type Section = NonNullable<SaveSettingsInput['section']>
-export interface SettingsSaveState { status: 'saved' | 'pending' | 'saving' | 'error'; message: string }
+export type SettingsSaveState =
+  | { status: 'idle' | 'saved' | 'pending' | 'saving' }
+  | { status: 'error'; message: string }
 const sections: Section[] = ['trace', 'items', 'behavior', 'model']
 
 function sectionKey(input: SaveSettingsInput, section: Section): string {
@@ -31,12 +33,12 @@ export function createSettingsAutosave(options: {
   let timer: ReturnType<typeof setTimeout> | undefined
   let saving: Promise<void> | null = null
 
-  function dirtySections(): Section[] {
-    return sections.filter((section) => savedKeys.get(section) !== sectionKey(current, section))
+  function dirtySections(input = current): Section[] {
+    return sections.filter((section) => savedKeys.get(section) !== sectionKey(input, section))
   }
 
   async function drain(): Promise<void> {
-    options.onState({ status: 'saving', message: '正在保存…' })
+    options.onState({ status: 'saving' })
     const failedKeys = new Map<Section, string>()
     const errors = new Map<Section, string>()
     while (true) {
@@ -60,30 +62,29 @@ export function createSettingsAutosave(options: {
       options.onState({ status: 'error', message: `保存失败：${message}` })
       throw new Error(message)
     }
-    options.onState({ status: 'saved', message: '已保存' })
+    options.onState({ status: 'saved' })
   }
 
   function flush(): Promise<void> {
     clearTimeout(timer)
     timer = undefined
     if (saving) return saving
-    if (dirtySections().length === 0) {
-      options.onState({ status: 'saved', message: '已保存' })
-      return Promise.resolve()
-    }
+    if (dirtySections().length === 0) return Promise.resolve()
     saving = drain().finally(() => { saving = null })
     return saving
   }
 
   return {
     update(input: SaveSettingsInput): void {
+      const previous = current
       current = input
       clearTimeout(timer)
+      timer = undefined
       if (dirtySections().length === 0) {
-        if (!saving) options.onState({ status: 'saved', message: '已保存' })
+        if (!saving && dirtySections(previous).length > 0) options.onState({ status: 'idle' })
         return
       }
-      options.onState({ status: 'pending', message: '等待保存…' })
+      if (!saving) options.onState({ status: 'pending' })
       timer = setTimeout(() => { void flush().catch(() => undefined) }, 300)
     },
     flush,

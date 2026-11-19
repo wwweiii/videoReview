@@ -1,3 +1,4 @@
+import { Loader2 } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState, type JSX } from 'react'
 import type { ConnectionTestResult, PublicSettings } from '@shared/types'
 import { BehaviorSettingsSection } from '../components/settings/BehaviorSettingsSection'
@@ -9,6 +10,8 @@ import { useSettingsForm } from '../hooks/useSettingsForm'
 import { friendlyError, type ShowToast } from '../lib/ui'
 import { createSettingsAutosave, registerSettingsFlush, type SettingsSaveState } from '../lib/settings-autosave'
 
+const IDLE_SAVE_STATE: SettingsSaveState = { status: 'idle' }
+
 /**
  * App 保持本组件挂载，让草稿和保存队列跨页面存活。
  *
@@ -18,12 +21,14 @@ import { createSettingsAutosave, registerSettingsFlush, type SettingsSaveState }
 export function SettingsPage({
   settings,
   section,
+  visible,
   onSectionChange,
   onSaved,
   showToast
 }: {
   settings: PublicSettings
   section: SettingsSection
+  visible: boolean
   onSectionChange: (section: SettingsSection) => void
   onSaved: (settings: PublicSettings) => void
   showToast: ShowToast
@@ -38,7 +43,9 @@ export function SettingsPage({
   const formRef = useRef(form)
   const onSavedRef = useRef(onSaved)
   const showToastRef = useRef(showToast)
-  const [saveState, setSaveState] = useState<SettingsSaveState>({ status: 'saved', message: '已保存' })
+  const [saveState, setSaveState] = useState<SettingsSaveState>(IDLE_SAVE_STATE)
+  const saving = saveState.status === 'pending' || saveState.status === 'saving'
+  const visibleRef = useRef(visible)
   const saverRef = useRef<ReturnType<typeof createSettingsAutosave> | null>(null)
 
   formRef.current = form
@@ -52,12 +59,25 @@ export function SettingsPage({
   }, [canViewTraces])
 
   useLayoutEffect(() => {
+    visibleRef.current = visible
+    setSaveState((state) => state.status === 'saved' ? IDLE_SAVE_STATE : state)
+  }, [visible, section])
+
+  useEffect(() => {
+    if (saveState.status !== 'saved') return
+    const timer = setTimeout(() => {
+      setSaveState((state) => state === saveState ? IDLE_SAVE_STATE : state)
+    }, 2000)
+    return () => clearTimeout(timer)
+  }, [saveState])
+
+  useLayoutEffect(() => {
     if (!saverRef.current) {
       saverRef.current = createSettingsAutosave({
         initial: formRef.current.buildSavePayload(),
         save: (input) => window.framelens.saveSettings(input),
         onState: (state) => {
-          setSaveState(state)
+          setSaveState(state.status === 'saved' && !visibleRef.current ? IDLE_SAVE_STATE : state)
           if (state.status === 'error') showToastRef.current('error', friendlyError(state.message))
         },
         onSaved: (saved, input) => {
@@ -119,9 +139,20 @@ export function SettingsPage({
           <SettingsNav section={section} onChange={onSectionChange} />
         </div>
         <div className="settings-save-state" role="status" aria-live="polite" data-status={saveState.status}>
-          <span>{saveState.message}</span>
-          {saveState.status === 'error' ? <button type="button" className="button button-secondary button-sm"
-            onClick={() => { void saverRef.current?.flush().catch(() => undefined) }}>重试保存</button> : null}
+          {saving ? (
+            <>
+              <Loader2 size={15} className="spin" aria-hidden="true" />
+              <span>保存中</span>
+            </>
+          ) : null}
+          {saveState.status === 'saved' ? <span>已保存</span> : null}
+          {saveState.status === 'error' ? (
+            <>
+              <span>{saveState.message}</span>
+              <button type="button" className="button button-secondary button-sm"
+                onClick={() => { void saverRef.current?.flush().catch(() => undefined) }}>重试保存</button>
+            </>
+          ) : null}
         </div>
       </header>
 

@@ -35,7 +35,8 @@ const verdict = (input) => deriveVerdict(parsed(input), 0.6).verdict
 const response = (content, finishReason = 'stop') => new Response(JSON.stringify({ choices: [{ message: { content: typeof content === 'string' ? content : JSON.stringify(content) }, finish_reason: finishReason }] }))
 const initial = {
   modelMode: 'custom', customModel: { baseUrl: 'http://127.0.0.1:1/v1', model: 'test', extraBody: '' },
-  developerMode: false, traceEnabled: false, intervalSec: 2, prohibitedItems: ['phone'], customProhibitedItems: [],
+  developerMode: false, traceEnabled: false, intervalSec: 2,
+  prohibitedItems: ['custom:phone'], customProhibitedItems: [{ id: 'custom:phone', label: '手机' }],
   analysisMode: 'single', groupSize: 4, localize: false, behaviorItems: [{ id: 'behavior:run', label: '奔跑' }],
   behaviorWindowSec: 2, behaviorStrideSec: 2, behaviorFps: 4, behaviorImageScalePercent: 100
 }
@@ -94,15 +95,16 @@ test('行为类别精确匹配，不将快速奔跑或未奔跑归入奔跑', ()
   assert.equal(parseBehaviorAnalysis(JSON.stringify({ ...normal, abnormal: true, categories: ['未奔跑'] }), ['奔跑']).needHumanReview, true)
 })
 test('物品按名称及显式别名匹配，自定义笔记本电脑不会被笔吞掉', () => {
-  assert.equal(matchItem('phone').itemId, 'phone')
+  assert.equal(matchItem('phone', ['phone']).itemId, 'phone')
+  assert.equal(matchItem('phone').itemId, null)
   assert.equal(matchItem('笔记本电脑').itemId, null)
   assert.equal(normalizeCustomItems([{ label: '笔记本电脑' }]).length, 1)
 })
 
-test('预设物品和自定义物品均按实际勾选保存，不补回未选项', () => {
-  const custom = [{ id: 'custom:power', label: '充电宝' }]
+test('设置只接受自定义物品，旧任务仍解析历史物品类别', () => {
+  const custom = normalizeCustomItems([{ id: 'custom:pencil', label: '铅笔' }, { id: 'custom:power', label: '充电宝' }])
   assert.deepEqual(normalizeSelectedItems([], custom), [])
-  assert.deepEqual(normalizeSelectedItems(['phone', 'pencil', 'phone', 'custom:power', 'missing'], custom), ['phone', 'pencil', 'custom:power'])
+  assert.deepEqual(normalizeSelectedItems(['phone', 'pencil', 'custom:pencil', 'custom:power', 'custom:pencil', 'missing'], custom), ['custom:pencil', 'custom:power'])
   assert.equal(matchItem('铅笔', ['pencil']).itemId, 'pencil')
   assert.equal(matchItem('中性笔', ['pencil']).itemId, null)
   assert.deepEqual(resolveProhibitedItems(['pen', 'cup', 'kettle']).map((item) => item.label), ['笔', '水杯', '水壶'])

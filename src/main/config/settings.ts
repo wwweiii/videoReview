@@ -8,7 +8,6 @@ import {
   DEFAULT_CONCURRENCY,
   DEFAULT_CONFIDENCE_THRESHOLD,
   DEFAULT_CUSTOM_MODEL,
-  DEFAULT_CUSTOM_PROHIBITED_ITEMS,
   DEFAULT_DEVELOPER_MODE,
   DEFAULT_GROUP_SIZE,
   DEFAULT_INTERVAL_SEC,
@@ -21,7 +20,7 @@ import {
   MIN_GROUP_SIZE
 } from '@shared/defaults'
 import { clampNumber, normalizeInterval } from '@shared/format'
-import { DEFAULT_PROHIBITED_ITEMS, normalizeCustomItems, normalizeSelectedItems } from '@shared/items'
+import { normalizeCustomItems, normalizeSelectedItems } from '@shared/items'
 import { normalizeBehaviorItems, normalizeBehaviorSampling } from '@shared/behavior'
 import type { BoxOrder, CoordinateSpace, ParseDialect } from '@shared/localization/profile'
 import type {
@@ -86,7 +85,6 @@ let cachedSettings: StoredSettings | null = null
 function defaultStoredSettings(): StoredSettings {
   const preset = getPresetConfig()
   const presetDefaults = preset?.defaults ?? {}
-  const customItems = normalizeCustomItems(DEFAULT_CUSTOM_PROHIBITED_ITEMS)
   const behaviorSampling = normalizeBehaviorSampling()
   return {
     requestConcurrency: Math.round(clampNumber(preset?.concurrency ?? DEFAULT_CONCURRENCY, 1, 8)),
@@ -106,8 +104,8 @@ function defaultStoredSettings(): StoredSettings {
       ...normalizeRuntimeModel(DEFAULT_MODEL_RUNTIME)
     },
     intervalSec: normalizeInterval(presetDefaults.intervalSec ?? DEFAULT_INTERVAL_SEC),
-    prohibitedItems: normalizeSelectedItems([...DEFAULT_PROHIBITED_ITEMS, ...customItems.map((item) => item.id)], customItems),
-    customProhibitedItems: customItems,
+    prohibitedItems: [],
+    customProhibitedItems: [],
     analysisMode: presetDefaults.analysisMode ?? DEFAULT_ANALYSIS_MODE,
     groupSize: Math.round(clampNumber(presetDefaults.groupSize ?? DEFAULT_GROUP_SIZE, MIN_GROUP_SIZE, MAX_GROUP_SIZE)),
     confidenceThreshold: clampNumber(

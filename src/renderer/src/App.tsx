@@ -294,6 +294,7 @@ export default function App(): React.JSX.Element {
           <SettingsPage
             settings={settings}
             section={view.name === 'settings' ? view.section : 'items'}
+            visible={view.name === 'settings'}
             onSectionChange={changeSettingsSection}
             onSaved={setSettings}
             showToast={showToast}

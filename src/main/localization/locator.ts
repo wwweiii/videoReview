@@ -98,7 +98,7 @@ function focusLabelsForFrame(
     const trimmed = category.trim()
     if (!trimmed) continue
     const match = matchItem(trimmed, itemIds, customItems)
-    // 只约束到"本次实际勾选的检测物品"上；判定里的其他文字不参与定位约束
+    // 定位约束仅使用任务配置中的检测物品。
     if (!match.itemId) continue
     if (match.category && !labels.includes(match.category)) labels.push(match.category)
   }
